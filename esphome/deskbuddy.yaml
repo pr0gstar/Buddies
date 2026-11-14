@@ -1,0 +1,1524 @@
+# Desk Buddy: ESPHome config for the ESP32-2432S024R "Cheap Yellow Display"
+# Energy dashboard + robot eyes in standby, mood driven by Home Assistant data.
+# Entity IDs are examples: replace them with your own. Secrets go into the
+# ESPHome secrets.yaml (deskbuddy_api_key, wifi_ssid, wifi_password,
+# deskbuddy_fallback_password).
+#
+# Board: Espressif ESP32 Dev Module
+# Definition: definitions/boards/esp32dev/manifest.yaml
+
+esphome:
+  name: deskbuddy-001
+  friendly_name: Deskbuddy 001
+
+esp32:
+  variant: esp32
+
+logger:
+
+api:
+  encryption:
+    key: !secret deskbuddy_api_key
+
+ota:
+  - platform: esphome
+    # Bare encryption: reuses the API key and refuses plaintext uploads
+    encryption:
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: Deskbuddy 001 Fallback Hotspot
+    password: !secret deskbuddy_fallback_password
+
+captive_portal:
+
+substitutions:
+  # Auto page cycling: start after this much time without touch ...
+  page_idle_timeout: 30s
+  # ... then switch to the next page at this interval.
+  page_cycle_interval: 10s
+  # Page transition animation: NONE, MOVE_LEFT, FADE_IN ...
+  page_animation_next: NONE
+  page_animation_prev: NONE
+  page_animation_time: 150ms
+  # Standby face: shown after this much time without touch, tap returns to the data pages
+  face_idle_timeout: 5min
+  # Face design scaled from the reference desk robot (128x64 OLED, about x2.5)
+  eye_color: "0xFFFFFF"
+  eye_size: "90"
+  eye_radius: "20"
+  eye_height_half: "45"
+  eye_height_closed: "5"
+  eye_offset_x: "70"
+  eye_offset_y: "-10"
+  pupil_size: "40"
+  pupil_radius: "10"
+  glint_size: "10"
+  gaze_x_px: "15"
+  gaze_y_px: "10"
+  # Mood codes, shared by update_face_mood and face_apply_mood
+  mood_neutral: "0"
+  mood_happy: "1"
+  mood_angry: "2"
+  mood_sleepy: "3"
+  mood_sad: "4"
+  mood_surprised: "5"
+  # Mood thresholds
+  face_surprised_load_w: "6000"
+  face_sad_battery_pct: "10"
+  # Glyphs for the fonts (saves flash)
+  glyphs_text: " !\"%'()+,-./0123456789:;?ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÄÖÜäöüß°"
+  glyphs_value: " %+-.0123456789:°"
+
+# ---------------------------------------------------------------------------
+# Hardware
+# ---------------------------------------------------------------------------
+spi:
+  id: spi_bus
+  clk_pin: GPIO14
+  mosi_pin: GPIO13
+  # GPIO12/15/2 are strapping pins, but fixed by the board wiring.
+  miso_pin: { number: GPIO12, ignore_strapping_warning: true }
+
+output:
+  - { platform: ledc, pin: GPIO27, id: backlight_pwm }
+  - { platform: ledc, pin: GPIO4, id: led_r, inverted: true }
+  - { platform: ledc, pin: GPIO16, id: led_g, inverted: true }
+  - { platform: ledc, pin: GPIO17, id: led_b, inverted: true }
+
+light:
+  - platform: monochromatic
+    id: display_backlight
+    output: backlight_pwm
+    name: Display Backlight
+    restore_mode: ALWAYS_ON
+  - platform: rgb
+    id: status_led
+    name: Status LED
+    red: led_r
+    green: led_g
+    blue: led_b
+    restore_mode: ALWAYS_OFF
+
+# 320x240 landscape; 180° rotation in hardware (faster than software rotation in LVGL)
+display:
+  - platform: mipi_spi
+    id: main_display
+    model: ILI9342
+    spi_id: spi_bus
+    data_rate: 40MHz
+    cs_pin: { number: GPIO15, ignore_strapping_warning: true }
+    dc_pin: { number: GPIO2, ignore_strapping_warning: true }
+    invert_colors: false
+    # Model default is BGR; this panel swapped red and blue with it
+    color_order: rgb
+    auto_clear_enabled: false
+    update_interval: never
+    dimensions:
+      width: 320
+      height: 240
+    transform:
+      swap_xy: false
+      mirror_x: false
+      mirror_y: true
+
+touchscreen:
+  - platform: xpt2046
+    id: main_touch
+    spi_id: spi_bus
+    cs_pin: GPIO33
+    interrupt_pin: GPIO36
+    calibration:
+      x_min: 225
+      x_max: 3835
+      y_min: 290
+      y_max: 3885
+
+# ---------------------------------------------------------------------------
+# State, switches, scripts
+# ---------------------------------------------------------------------------
+font:
+  - file: "gfonts://Roboto@700"
+    id: font_value_large
+    size: 44
+    bpp: 4
+    glyphs: "${glyphs_value}"
+  - file: "gfonts://Roboto@700"
+    id: font_value_medium
+    size: 28
+    bpp: 4
+    glyphs: "${glyphs_text}"
+  # Bold: weight 500 at 16 px looked hollow on the TN panel
+  - file: "gfonts://Roboto@700"
+    id: font_caption
+    size: 16
+    bpp: 4
+    glyphs: "${glyphs_text}"
+  - file: "gfonts://Roboto@500"
+    id: font_date
+    size: 22
+    bpp: 4
+    glyphs: "${glyphs_text}"
+
+number:
+  - platform: template
+    id: day_max_brightness
+    name: Display Helligkeit Tag
+    icon: mdi:brightness-6
+    unit_of_measurement: "%"
+    min_value: 5
+    max_value: 100
+    step: 5
+    initial_value: 45
+    optimistic: true
+    restore_value: true
+    entity_category: config
+  - platform: template
+    id: night_max_brightness
+    name: Display Helligkeit Nacht
+    icon: mdi:brightness-4
+    unit_of_measurement: "%"
+    min_value: 5
+    max_value: 100
+    step: 5
+    initial_value: 8
+    optimistic: true
+    restore_value: true
+    entity_category: config
+
+globals:
+  # 0 = off, 1 = exporting (green), 2 = high grid import (red)
+  - id: status_led_mode
+    type: int
+    restore_value: false
+    initial_value: "0"
+  - id: face_visible
+    type: bool
+    restore_value: false
+    initial_value: "false"
+  # Last applied face mood; -1 = none yet (forces the next update)
+  - id: face_mood
+    type: int
+    restore_value: false
+    initial_value: "-1"
+  # Current gaze offset of the pupils in px
+  - id: face_gaze_dx
+    type: int
+    restore_value: false
+    initial_value: "0"
+  - id: face_gaze_dy
+    type: int
+    restore_value: false
+    initial_value: "0"
+
+switch:
+  - platform: template
+    id: auto_brightness
+    name: Display Auto-Helligkeit
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    entity_category: config
+
+# Pick a face mood by hand in HA (demo, photos). "Auto" = mood from house data.
+select:
+  - platform: template
+    id: face_mood_override
+    name: Face mood
+    options: ["Auto", "Neutral", "Happy", "Angry", "Sleepy", "Sad", "Surprised"]
+    initial_option: "Auto"
+    optimistic: true
+    entity_category: config
+    on_value:
+      - lambda: "id(face_mood) = -1;"  # force a redraw
+      - lvgl.page.show: face_page
+      - script.execute: update_face_mood
+
+time:
+  - platform: homeassistant
+    id: ha_time
+    on_time_sync:
+      - script.execute: update_clock
+    on_time:
+      - seconds: 0
+        then:
+          - script.execute: update_clock
+
+# Idle behaviour: cycle the data pages, after a longer idle time show the face
+interval:
+  - interval: ${page_cycle_interval}
+    then:
+      - if:
+          condition:
+            lambda: "return !id(face_visible);"
+          then:
+            - if:
+                condition:
+                  lvgl.is_idle:
+                    timeout: ${face_idle_timeout}
+                then:
+                  - lvgl.page.show: face_page
+                else:
+                  - if:
+                      condition:
+                        lvgl.is_idle:
+                          timeout: ${page_idle_timeout}
+                      then:
+                        - script.execute: show_next_page
+
+  # Face animation (reference: blink every 2-6 s, glance every 0.5-3 s)
+  - interval: 1s
+    then:
+      - if:
+          condition:
+            lambda: "return id(face_visible);"
+          then:
+            - script.execute: update_face_mood
+            - if:
+                condition:
+                  lambda: |-
+                    constexpr uint32_t BLINK_ONE_IN = 4;  // about every 4 s
+                    return random_uint32() % BLINK_ONE_IN == 0;
+                then:
+                  - if:
+                      condition:
+                        lambda: |-
+                          constexpr uint32_t SUSPICIOUS_ONE_IN = 8;  // now and then a suspicious look instead
+                          return random_uint32() % SUSPICIOUS_ONE_IN == 0;
+                      then:
+                        - script.execute: face_suspicious
+                      else:
+                        - script.execute: face_blink
+  - interval: 500ms
+    then:
+      - if:
+          condition:
+            lambda: |-
+              constexpr uint32_t GLANCE_ONE_IN = 3;  // about every 1.5 s
+              return id(face_visible) && random_uint32() % GLANCE_ONE_IN == 0;
+          then:
+            - script.execute: face_glance
+
+script:
+  - id: show_next_page
+    then:
+      - lvgl.page.next:
+          animation: ${page_animation_next}
+          time: ${page_animation_time}
+
+  - id: show_previous_page
+    then:
+      - lvgl.page.previous:
+          animation: ${page_animation_prev}
+          time: ${page_animation_time}
+
+  # Tap on the left half -> previous page, right half -> next page.
+  # The click that ends a swipe is ignored (the swipe already switched the page).
+  - id: handle_page_tap
+    then:
+      - if:
+          condition:
+            lambda: |-
+              lv_indev_t *indev = lv_indev_active();
+              return indev != nullptr && lv_indev_get_gesture_dir(indev) == LV_DIR_NONE;
+          then:
+            - if:
+                condition:
+                  lambda: |-
+                    lv_point_t point;
+                    lv_indev_get_point(lv_indev_active(), &point);
+                    return point.x < lv_display_get_horizontal_resolution(nullptr) / 2;
+                then:
+                  - script.execute: show_previous_page
+                else:
+                  - script.execute: show_next_page
+
+  # --- Standby face (design after the reference desk robot) ---
+  - id: update_face_mood
+    then:
+      - lambda: |-
+          constexpr int LED_EXPORT = 1;       // see status_led_mode
+          constexpr int LED_HIGH_IMPORT = 2;  // see status_led_mode
+          const float house_w = id(house_power).state;
+          const float battery_pct = id(battery_soc).state;
+
+          int mood = ${mood_neutral};
+          if (id(night_time).state) mood = ${mood_sleepy};
+          else if (id(status_led_mode) == LED_HIGH_IMPORT) mood = ${mood_angry};
+          else if (!std::isnan(house_w) && house_w > ${face_surprised_load_w}) mood = ${mood_surprised};
+          else if (id(status_led_mode) == LED_EXPORT) mood = ${mood_happy};
+          else if (!std::isnan(battery_pct) && battery_pct < ${face_sad_battery_pct}) mood = ${mood_sad};
+
+          // Manual override from HA (index 0 = Auto), order must match the select options
+          static const int MOOD_OVERRIDE[] = {
+              -1, ${mood_neutral}, ${mood_happy}, ${mood_angry},
+              ${mood_sleepy}, ${mood_sad}, ${mood_surprised}};
+          const auto override_index = id(face_mood_override).active_index();
+          if (override_index.has_value() && *override_index > 0) mood = MOOD_OVERRIDE[*override_index];
+
+          if (mood == id(face_mood)) return;
+          id(face_mood) = mood;
+          id(face_apply_mood).execute();
+
+  - id: face_apply_mood
+    then:
+      - lambda: |-
+          switch (id(face_mood)) {
+            case ${mood_happy}: id(face_mood_happy).execute(); break;
+            case ${mood_angry}: id(face_mood_angry).execute(); break;
+            case ${mood_sleepy}: id(face_mood_sleepy).execute(); break;
+            case ${mood_sad}: id(face_mood_sad).execute(); break;
+            case ${mood_surprised}: id(face_mood_surprised).execute(); break;
+            default: id(face_mood_neutral).execute(); break;
+          }
+
+  # Every mood starts from open eyes with pupils and no lids
+  - id: face_reset
+    then:
+      - lvgl.widget.update:
+          id: [top_lid_left, top_lid_right, angry_lid_left, angry_lid_right, sad_lid_left, sad_lid_right,
+               cheek_lid_left, cheek_lid_right, bottom_lid_left, bottom_lid_right, face_zzz]
+          hidden: true
+      - lvgl.widget.update:
+          id: [pupil_left, pupil_right]
+          hidden: false
+
+  - id: face_set_eyes
+    parameters:
+      left_w: int
+      left_h: int
+      right_w: int
+      right_h: int
+    then:
+      - lvgl.widget.update:
+          id: left_eye
+          width: !lambda "return left_w;"
+          height: !lambda "return left_h;"
+      - lvgl.widget.update:
+          id: right_eye
+          width: !lambda "return right_w;"
+          height: !lambda "return right_h;"
+
+  # Eye sizes per mood are the reference values scaled by about 2.5
+  - id: face_mood_neutral
+    then:
+      - script.execute: face_reset
+      - script.execute: {id: face_set_eyes, left_w: 90, left_h: 90, right_w: 90, right_h: 90}
+
+  # Wide and flat, cheeks push up from below
+  - id: face_mood_happy
+    then:
+      - script.execute: face_reset
+      - script.execute: {id: face_set_eyes, left_w: 100, left_h: 80, right_w: 100, right_h: 80}
+      - lvgl.widget.update:
+          id: [cheek_lid_left, cheek_lid_right]
+          hidden: false
+
+  - id: face_mood_surprised
+    then:
+      - script.execute: face_reset
+      - script.execute: {id: face_set_eyes, left_w: 75, left_h: 112, right_w: 75, right_h: 112}
+
+  # Heavy lids and "Z z z"
+  - id: face_mood_sleepy
+    then:
+      - script.execute: face_reset
+      - script.execute: {id: face_set_eyes, left_w: 95, left_h: 75, right_w: 95, right_h: 75}
+      - lvgl.widget.update:
+          id: [top_lid_left, top_lid_right]
+          height: 40
+          hidden: false
+      - lvgl.widget.update:
+          id: face_zzz
+          hidden: false
+
+  # Lids slant down towards the nose
+  - id: face_mood_angry
+    then:
+      - script.execute: face_reset
+      - script.execute: {id: face_set_eyes, left_w: 85, left_h: 80, right_w: 85, right_h: 80}
+      - lvgl.widget.update:
+          id: [angry_lid_left, angry_lid_right]
+          hidden: false
+
+  # Lids slant down to the outside
+  - id: face_mood_sad
+    then:
+      - script.execute: face_reset
+      - script.execute: {id: face_set_eyes, left_w: 85, left_h: 100, right_w: 85, right_h: 100}
+      - lvgl.widget.update:
+          id: [sad_lid_left, sad_lid_right]
+          hidden: false
+
+  # Short gesture: left eye squints, right eye opens wide, then back to the mood
+  - id: face_suspicious
+    mode: single
+    then:
+      - script.execute: face_reset
+      - script.execute: {id: face_set_eyes, left_w: 90, left_h: 50, right_w: 90, right_h: 105}
+      - lvgl.widget.update:
+          id: top_lid_left
+          height: 23
+          hidden: false
+      - lvgl.widget.update:
+          id: bottom_lid_right
+          hidden: false
+      - delay: 1500ms
+      - script.execute: face_apply_mood
+
+  - id: face_blink
+    mode: single
+    then:
+      - lvgl.widget.update:
+          id: [pupil_left, pupil_right]
+          hidden: true
+      - lvgl.widget.update:
+          id: [left_eye, right_eye]
+          height: ${eye_height_half}
+      - delay: 40ms
+      - lvgl.widget.update:
+          id: [left_eye, right_eye]
+          height: ${eye_height_closed}
+      - delay: 80ms
+      - lvgl.widget.update:
+          id: [left_eye, right_eye]
+          height: ${eye_height_half}
+      - delay: 40ms
+      - script.execute: face_apply_mood
+
+  # Pupils jump to one of 10 directions (4x centre); the eyes follow by 30 %
+  - id: face_glance
+    then:
+      - lambda: |-
+          static const int8_t GAZE_X[] = {0, 0, 0, 0, -1, 1, -1, 1, 1, -1};
+          static const int8_t GAZE_Y[] = {0, 0, 0, 0, -1, -1, 1, 1, 0, 0};
+          constexpr uint32_t GAZE_DIRECTIONS = sizeof(GAZE_X) / sizeof(GAZE_X[0]);
+          const uint32_t direction = random_uint32() % GAZE_DIRECTIONS;
+          id(face_gaze_dx) = GAZE_X[direction] * ${gaze_x_px};
+          id(face_gaze_dy) = GAZE_Y[direction] * ${gaze_y_px};
+      - lvgl.widget.update:
+          id: [pupil_left, pupil_right]
+          x: !lambda "return id(face_gaze_dx);"
+          y: !lambda "return id(face_gaze_dy);"
+      - lvgl.widget.update:
+          id: left_eye
+          x: !lambda "return -${eye_offset_x} + id(face_gaze_dx) * 3 / 10;"
+          y: !lambda "return ${eye_offset_y} + id(face_gaze_dy) * 3 / 10;"
+      - lvgl.widget.update:
+          id: right_eye
+          x: !lambda "return ${eye_offset_x} + id(face_gaze_dx) * 3 / 10;"
+          y: !lambda "return ${eye_offset_y} + id(face_gaze_dy) * 3 / 10;"
+
+  - id: update_clock
+    then:
+      - lvgl.label.update:
+          id: clock_time_label
+          text: !lambda |-
+            auto now = id(ha_time).now();
+            if (!now.is_valid()) return std::string("--:--");
+            return now.strftime("%H:%M");
+      - lvgl.label.update:
+          id: clock_date_label
+          text: !lambda |-
+            static const char *const WEEKDAYS[] = {"So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"};
+            auto now = id(ha_time).now();
+            if (!now.is_valid()) return std::string("--");
+            return str_sprintf("%s, %02d.%02d.%04d", WEEKDAYS[now.day_of_week - 1],
+                               now.day_of_month, now.month, now.year);
+
+# ---------------------------------------------------------------------------
+# Sensors (Home Assistant values are internal: not re-exported to HA)
+# ---------------------------------------------------------------------------
+sensor:
+  # Light sensor (LDR) for automatic backlight. Exposed to HA for calibration.
+  - platform: adc
+    id: light_sensor_voltage
+    name: Umgebungslicht
+    pin: GPIO34
+    update_interval: 1s
+    unit_of_measurement: V
+    accuracy_decimals: 3
+    entity_category: diagnostic
+    filters:
+      - sliding_window_moving_average:
+          window_size: 10
+          send_every: 5
+    on_value:
+      - lambda: |-
+          // CYD LDR: higher voltage = darker. Measured 2026-11-13: room light sits at the
+          // ADC floor (0.075 V), covered by a finger ~0.085 V. Only darkness is detectable.
+          constexpr float LDR_VOLTAGE_BRIGHT = 0.076f;
+          constexpr float LDR_VOLTAGE_DARK = 0.100f;
+          const float DAY_MAX_BRIGHTNESS = id(day_max_brightness).state / 100.0f;
+          const float NIGHT_MAX_BRIGHTNESS = id(night_max_brightness).state / 100.0f;
+          const float DAY_MIN_BRIGHTNESS = std::min(NIGHT_MAX_BRIGHTNESS, DAY_MAX_BRIGHTNESS);
+          constexpr float MIN_BRIGHTNESS_CHANGE = 0.03f;
+          constexpr uint32_t TRANSITION_MS = 1000;
+
+          if (!id(auto_brightness).state || std::isnan(x)) return;
+
+          float darkness = (x - LDR_VOLTAGE_BRIGHT) / (LDR_VOLTAGE_DARK - LDR_VOLTAGE_BRIGHT);
+          darkness = clamp(darkness, 0.0f, 1.0f);
+          float target = DAY_MAX_BRIGHTNESS - darkness * (DAY_MAX_BRIGHTNESS - DAY_MIN_BRIGHTNESS);
+
+          if (id(night_time).state) target = std::min(target, NIGHT_MAX_BRIGHTNESS);
+
+          float current = id(display_backlight).remote_values.get_brightness();
+          if (std::fabs(target - current) < MIN_BRIGHTNESS_CHANGE) return;
+
+          auto call = id(display_backlight).turn_on();
+          call.set_brightness(target);
+          call.set_transition_length(TRANSITION_MS);
+          call.perform();
+
+  # --- Energy (power values in kW, unit shown in the card caption) ---
+  - platform: homeassistant
+    id: pv_power
+    entity_id: sensor.solar_power
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: pv_power_label
+          text: !lambda 'return std::isnan(x) ? std::string("--") : str_sprintf("%.1f", x / 1000.0f);'
+
+  - platform: homeassistant
+    id: pv_energy_today
+    entity_id: sensor.solar_energy_today
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: pv_today_label
+          text: !lambda 'return std::isnan(x) ? std::string("heute --") : str_sprintf("heute %.1f kWh", x);'
+
+  - platform: homeassistant
+    id: battery_soc
+    entity_id: sensor.home_battery_level
+    internal: true
+    on_value:
+      - lvgl.bar.update:
+          id: battery_bar
+          value: !lambda 'return std::isnan(x) ? 0 : (int) std::lround(x);'
+      - lvgl.label.update:
+          id: battery_soc_label
+          text: !lambda 'return std::isnan(x) ? std::string("--") : str_sprintf("%.0f%%", x);'
+
+  # Positive = discharging, negative = charging
+  - platform: homeassistant
+    id: battery_power
+    entity_id: sensor.home_battery_power
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: battery_power_label
+          text: !lambda |-
+            constexpr float IDLE_THRESHOLD_W = 20.0f;
+            if (std::isnan(x)) return std::string("--");
+            if (std::fabs(x) <= IDLE_THRESHOLD_W) return std::string("Standby");
+            const char *direction = x > 0 ? "Entladen" : "Laden";
+            return str_sprintf("%s %.1f kW", direction, std::fabs(x) / 1000.0f);
+
+  - platform: homeassistant
+    id: house_power
+    entity_id: sensor.house_power
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: house_power_label
+          text: !lambda 'return std::isnan(x) ? std::string("--") : str_sprintf("%.1f", x / 1000.0f);'
+
+  # Positive = import from grid, negative = export
+  - platform: homeassistant
+    id: grid_power
+    entity_id: sensor.grid_power
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: grid_power_label
+          text: !lambda 'return std::isnan(x) ? std::string("--") : str_sprintf("%.2f", std::fabs(x) / 1000.0f);'
+      - lvgl.label.update:
+          id: grid_direction_label
+          text: !lambda |-
+            if (std::isnan(x)) return std::string("--");
+            return std::string(x < 0 ? "Einspeisung" : "Bezug");
+          text_color: !lambda 'return (!std::isnan(x) && x < 0) ? lv_color_hex(0x2ECC71) : lv_color_hex(0xFF9500);'
+      - lambda: |-
+          constexpr float EXPORT_THRESHOLD_W = -100.0f;
+          constexpr float HIGH_IMPORT_THRESHOLD_W = 1500.0f;
+          constexpr float LED_BRIGHTNESS = 0.15f;
+          constexpr int LED_OFF = 0;
+          constexpr int LED_EXPORT = 1;
+          constexpr int LED_HIGH_IMPORT = 2;
+
+          int mode = LED_OFF;
+          if (!std::isnan(x)) {
+            if (x < EXPORT_THRESHOLD_W) mode = LED_EXPORT;
+            else if (x > HIGH_IMPORT_THRESHOLD_W) mode = LED_HIGH_IMPORT;
+          }
+          if (mode == id(status_led_mode)) return;
+          id(status_led_mode) = mode;
+
+          if (mode == LED_OFF) {
+            id(status_led).turn_off().perform();
+            return;
+          }
+          auto call = id(status_led).turn_on();
+          call.set_brightness(LED_BRIGHTNESS);
+          if (mode == LED_EXPORT) call.set_rgb(0.0f, 1.0f, 0.0f);
+          else call.set_rgb(1.0f, 0.0f, 0.0f);
+          call.perform();
+
+  - platform: homeassistant
+    id: grid_import_today
+    entity_id: sensor.grid_import_today
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: grid_today_label
+          text: !lambda 'return std::isnan(x) ? std::string("heute --") : str_sprintf("heute %.1f kWh", x);'
+
+  # --- Heating ---
+  - platform: homeassistant
+    id: leaving_water_temperature
+    entity_id: sensor.heat_pump_flow_temperature
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: leaving_water_label
+          text: !lambda 'return std::isnan(x) ? std::string("--") : str_sprintf("%.0f°", x);'
+
+  - platform: homeassistant
+    id: leaving_water_offset
+    entity_id: climate.heat_pump_flow_offset
+    attribute: temperature
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: offset_label
+          text: !lambda 'return std::isnan(x) ? std::string("Offset --") : str_sprintf("Offset %+.0f K", x);'
+
+  - platform: homeassistant
+    id: hot_water_temperature
+    entity_id: sensor.hot_water_tank_temperature
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: hot_water_label
+          text: !lambda 'return std::isnan(x) ? std::string("--") : str_sprintf("%.0f°", x);'
+      - lvgl.bar.update:
+          id: hot_water_bar
+          value: !lambda 'return std::isnan(x) ? 0 : (int) std::lround(x);'
+
+  # Indoor sensor next to the desk
+  - platform: homeassistant
+    id: indoor_temperature
+    entity_id: sensor.indoor_temperature
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: indoor_temperature_label
+          text: !lambda 'return std::isnan(x) ? std::string("--") : str_sprintf("%.1f°", x);'
+
+  - platform: homeassistant
+    id: indoor_humidity
+    entity_id: sensor.indoor_humidity
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: indoor_humidity_label
+          text: !lambda 'return std::isnan(x) ? std::string("Feuchte --") : str_sprintf("Feuchte %.0f %%", x);'
+
+  - platform: homeassistant
+    id: outdoor_temperature
+    entity_id: sensor.outdoor_temperature
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: outdoor_temperature_label
+          text: !lambda 'return std::isnan(x) ? std::string("--") : str_sprintf("%.1f°", x);'
+
+  - platform: homeassistant
+    id: outdoor_humidity
+    entity_id: sensor.outdoor_humidity
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: outdoor_humidity_label
+          text: !lambda 'return std::isnan(x) ? std::string("Feuchte --") : str_sprintf("Feuchte %.0f %%", x);'
+
+  - platform: homeassistant
+    id: heat_pump_energy_today
+    entity_id: sensor.heat_pump_energy_today
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: heat_pump_today_label
+          text: !lambda 'return std::isnan(x) ? std::string("heute --") : str_sprintf("heute %.0f kWh", x);'
+
+  # --- Status ---
+  - platform: homeassistant
+    id: vacuum_battery
+    entity_id: sensor.robot_vacuum_battery
+    internal: true
+    on_value:
+      - lvgl.bar.update:
+          id: vacuum_battery_bar
+          value: !lambda 'return std::isnan(x) ? 0 : (int) std::lround(x);'
+      - lvgl.label.update:
+          id: vacuum_battery_label
+          text: !lambda 'return std::isnan(x) ? std::string("--") : str_sprintf("%.0f%%", x);'
+
+  - platform: homeassistant
+    id: wallbox_power
+    entity_id: sensor.wallbox_charging_power
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: wallbox_power_label
+          text: !lambda 'return std::isnan(x) ? std::string("--") : str_sprintf("%.1f", x / 1000.0f);'
+
+text_sensor:
+  - platform: homeassistant
+    id: heating_mode
+    entity_id: climate.heat_pump_flow_offset
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: heating_mode_label
+          text: !lambda |-
+            if (x == "heat") return std::string("Heizen");
+            if (x == "off") return std::string("Aus");
+            return std::string("--");
+
+  - platform: homeassistant
+    id: vacuum_state
+    entity_id: vacuum.robot_vacuum
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: vacuum_state_label
+          text: !lambda |-
+            if (x == "docked") return std::string("Angedockt");
+            if (x == "cleaning") return std::string("Reinigt");
+            if (x == "returning") return std::string("Zur Station");
+            if (x == "paused") return std::string("Pausiert");
+            if (x == "idle") return std::string("Bereit");
+            if (x == "error") return std::string("Fehler");
+            return std::string("--");
+
+  # Format "YYYY-MM-DD HH:MM:SS" -> "DD.MM. HH:MM"
+  - platform: homeassistant
+    id: vacuum_last_cleaning
+    entity_id: input_datetime.robot_vacuum_last_cleaning
+    internal: true
+    on_value:
+      - lvgl.label.update:
+          id: vacuum_last_cleaning_label
+          text: !lambda |-
+            constexpr size_t MIN_DATETIME_LENGTH = 16;
+            if (x.size() < MIN_DATETIME_LENGTH || x[4] != '-') return std::string("Zuletzt --");
+            return "Zuletzt " + x.substr(8, 2) + "." + x.substr(5, 2) + ". " + x.substr(11, 5);
+
+binary_sensor:
+  # BOOT button on the board edge (GPIO0) toggles the standby face.
+  # Holding it during power-on/reset still enters the flash bootloader, as before.
+  - platform: gpio
+    id: boot_button
+    internal: true
+    pin:
+      number: GPIO0
+      inverted: true
+      mode:
+        input: true
+        pullup: true
+      ignore_strapping_warning: true
+    filters:
+      - delayed_on: 30ms
+    on_press:
+      - if:
+          condition:
+            lambda: "return id(face_visible);"
+          then:
+            - lvgl.page.show: energy_page
+          else:
+            - lvgl.page.show: face_page
+
+  # Shared by auto brightness and the standby face
+  - platform: template
+    id: night_time
+    internal: true
+    lambda: |-
+      constexpr int NIGHT_START_MINUTES = 22 * 60;
+      constexpr int NIGHT_END_MINUTES = 6 * 60 + 30;
+      auto now = id(ha_time).now();
+      if (!now.is_valid()) return false;
+      int minutes = now.hour * 60 + now.minute;
+      return minutes >= NIGHT_START_MINUTES || minutes < NIGHT_END_MINUTES;
+
+  - platform: homeassistant
+    id: heat_pump_error
+    entity_id: binary_sensor.heat_pump_error
+    internal: true
+    # Otherwise the label stays "--" until the first change after boot
+    trigger_on_initial_state: true
+    on_state:
+      - lvgl.label.update:
+          id: heat_pump_error_label
+          text: !lambda 'return std::string(x ? "STOERUNG" : "OK");'
+          text_color: !lambda 'return x ? lv_color_hex(0xFF3B30) : lv_color_hex(0x2ECC71);'
+
+# ---------------------------------------------------------------------------
+# LVGL UI: 320x240 landscape, swipe navigation, page dots at the bottom
+# Grid: 6 px gutter, two rows of 106 px, 16 px reserved for the page dots.
+# ---------------------------------------------------------------------------
+lvgl:
+  buffer_size: 25%
+  bg_color: 0x000000
+  text_color: 0xFFFFFF
+
+  style_definitions:
+    - id: card_style
+      # Pure black: dark greys turn bright blue on the TN panel at an angle
+      bg_color: 0x000000
+      bg_opa: COVER
+      border_width: 1
+      border_color: 0x262626
+      radius: 10
+      pad_all: 6
+    - id: caption_style
+      text_font: font_caption
+      # Pure white: grey text looks hollow on the TN panel (grey edges appear brighter than the fill)
+      text_color: 0xFFFFFF
+    - id: value_large_style
+      text_font: font_value_large
+      text_color: 0xFFFFFF
+    - id: value_medium_style
+      text_font: font_value_medium
+      text_color: 0xFFFFFF
+    - id: detail_style
+      text_font: font_caption
+      text_color: 0xFFFFFF
+    - id: bar_style
+      bg_color: 0x262626
+      bg_opa: COVER
+      radius: 3
+    - id: page_dot_style
+      width: 8
+      height: 8
+      radius: 4
+      border_width: 0
+      bg_opa: COVER
+      bg_color: 0x333333
+    - id: eye_style
+      bg_color: ${eye_color}
+      bg_opa: COVER
+      border_width: 0
+      radius: ${eye_radius}
+      pad_all: 0
+      clip_corner: true
+    - id: lid_style
+      bg_color: 0x000000
+      bg_opa: COVER
+      border_width: 0
+      pad_all: 0
+
+  # Page indicator: not clickable, so swipes reach the page below
+  top_layer:
+    widgets:
+      - obj:
+          id: page_dot_energy
+          align: BOTTOM_MID
+          x: -14
+          y: -4
+          styles: page_dot_style
+          clickable: false
+          checked:
+            bg_color: 0x0A84FF
+          state:
+            checked: true
+      - obj:
+          id: page_dot_heating
+          align: BOTTOM_MID
+          x: 0
+          y: -4
+          styles: page_dot_style
+          clickable: false
+          checked:
+            bg_color: 0x0A84FF
+      - obj:
+          id: page_dot_status
+          align: BOTTOM_MID
+          x: 14
+          y: -4
+          styles: page_dot_style
+          clickable: false
+          checked:
+            bg_color: 0x0A84FF
+
+  pages:
+    # ---------------- Energy: 2x2 (battery, PV / house, grid) ----------------
+    - id: energy_page
+      scrollable: false
+      on_swipe_left:
+        - script.execute: show_next_page
+      on_swipe_right:
+        - script.execute: show_previous_page
+      on_click:
+        - script.execute: handle_page_tap
+      on_load:
+        - lvgl.widget.update:
+            id: page_dot_energy
+            state:
+              checked: true
+        - lvgl.widget.update:
+            id: [page_dot_heating, page_dot_status]
+            state:
+              checked: false
+      widgets:
+        - obj:
+            x: 6
+            y: 6
+            width: 151
+            height: 106
+            styles: card_style
+            scrollable: false
+            clickable: false
+            widgets:
+              - label:
+                  text: Akku
+                  styles: caption_style
+              - label:
+                  id: battery_soc_label
+                  y: 12
+                  text: "--"
+                  styles: value_large_style
+              - bar:
+                  id: battery_bar
+                  y: 66
+                  width: 139
+                  height: 6
+                  min_value: 0
+                  max_value: 100
+                  value: 0
+                  styles: bar_style
+                  indicator:
+                    bg_color: 0x2ECC71
+                    radius: 3
+              - label:
+                  id: battery_power_label
+                  align: BOTTOM_LEFT
+                  text: "--"
+                  styles: detail_style
+
+        - obj:
+            x: 163
+            y: 6
+            width: 151
+            height: 106
+            styles: card_style
+            scrollable: false
+            clickable: false
+            widgets:
+              - label:
+                  text: PV kW
+                  styles: caption_style
+              - label:
+                  id: pv_power_label
+                  y: 16
+                  text: "--"
+                  styles: value_large_style
+              - label:
+                  id: pv_today_label
+                  align: BOTTOM_LEFT
+                  text: "heute --"
+                  styles: detail_style
+
+        - obj:
+            x: 6
+            y: 118
+            width: 151
+            height: 106
+            styles: card_style
+            scrollable: false
+            clickable: false
+            widgets:
+              - label:
+                  text: Haus kW
+                  styles: caption_style
+              - label:
+                  id: house_power_label
+                  y: 16
+                  text: "--"
+                  styles: value_large_style
+
+        - obj:
+            x: 163
+            y: 118
+            width: 151
+            height: 106
+            styles: card_style
+            scrollable: false
+            clickable: false
+            widgets:
+              - label:
+                  text: Netz
+                  styles: caption_style
+              - label:
+                  id: grid_direction_label
+                  align: TOP_RIGHT
+                  text: "--"
+                  styles: detail_style
+              - label:
+                  id: grid_power_label
+                  y: 16
+                  text: "--"
+                  styles: value_large_style
+              - label:
+                  id: grid_today_label
+                  align: BOTTOM_LEFT
+                  text: "heute --"
+                  styles: detail_style
+
+    # ---------------- Heating: indoor, outdoor / flow, hot water, heat pump ----------------
+    - id: heating_page
+      scrollable: false
+      on_swipe_left:
+        - script.execute: show_next_page
+      on_swipe_right:
+        - script.execute: show_previous_page
+      on_click:
+        - script.execute: handle_page_tap
+      on_load:
+        - lvgl.widget.update:
+            id: page_dot_heating
+            state:
+              checked: true
+        - lvgl.widget.update:
+            id: [page_dot_energy, page_dot_status]
+            state:
+              checked: false
+      widgets:
+        - obj:
+            x: 6
+            y: 6
+            width: 151
+            height: 106
+            styles: card_style
+            scrollable: false
+            clickable: false
+            widgets:
+              - label:
+                  text: Innen
+                  styles: caption_style
+              - label:
+                  id: indoor_temperature_label
+                  y: 22
+                  text: "--"
+                  styles: value_large_style
+              - label:
+                  id: indoor_humidity_label
+                  align: BOTTOM_LEFT
+                  text: "Feuchte --"
+                  styles: detail_style
+
+        - obj:
+            x: 163
+            y: 6
+            width: 151
+            height: 106
+            styles: card_style
+            scrollable: false
+            clickable: false
+            widgets:
+              - label:
+                  text: Aussen
+                  styles: caption_style
+              - label:
+                  id: outdoor_temperature_label
+                  y: 22
+                  text: "--"
+                  styles: value_large_style
+              - label:
+                  id: outdoor_humidity_label
+                  align: BOTTOM_LEFT
+                  text: "Feuchte --"
+                  styles: detail_style
+
+        - obj:
+            x: 6
+            y: 118
+            width: 92
+            height: 106
+            styles: card_style
+            scrollable: false
+            clickable: false
+            widgets:
+              - label:
+                  text: Vorlauf
+                  styles: caption_style
+              - label:
+                  id: leaving_water_label
+                  y: 16
+                  text: "--"
+                  styles: value_large_style
+              - label:
+                  id: offset_label
+                  align: BOTTOM_LEFT
+                  text: "Offset --"
+                  styles: detail_style
+
+        - obj:
+            x: 104
+            y: 118
+            width: 92
+            height: 106
+            styles: card_style
+            scrollable: false
+            clickable: false
+            widgets:
+              - label:
+                  text: Wasser
+                  styles: caption_style
+              - label:
+                  id: hot_water_label
+                  y: 16
+                  text: "--"
+                  styles: value_large_style
+              - bar:
+                  id: hot_water_bar
+                  align: BOTTOM_LEFT
+                  y: -4
+                  width: 80
+                  height: 6
+                  min_value: 20
+                  max_value: 60
+                  value: 20
+                  styles: bar_style
+                  indicator:
+                    bg_color: 0xFF9500
+                    radius: 3
+
+        - obj:
+            x: 202
+            y: 118
+            width: 112
+            height: 106
+            styles: card_style
+            scrollable: false
+            clickable: false
+            widgets:
+              - label:
+                  text: WP
+                  styles: caption_style
+              - label:
+                  id: heat_pump_error_label
+                  align: TOP_RIGHT
+                  text: "--"
+                  styles: detail_style
+              - label:
+                  id: heating_mode_label
+                  y: 28
+                  text: "--"
+                  styles: value_medium_style
+              - label:
+                  id: heat_pump_today_label
+                  align: BOTTOM_LEFT
+                  text: "heute --"
+                  styles: detail_style
+
+    # ---------------- Status: clock / robot vacuum, wallbox ----------------
+    - id: status_page
+      scrollable: false
+      on_swipe_left:
+        - script.execute: show_next_page
+      on_swipe_right:
+        - script.execute: show_previous_page
+      on_click:
+        - script.execute: handle_page_tap
+      on_load:
+        - lvgl.widget.update:
+            id: page_dot_status
+            state:
+              checked: true
+        - lvgl.widget.update:
+            id: [page_dot_energy, page_dot_heating]
+            state:
+              checked: false
+      widgets:
+        - obj:
+            x: 6
+            y: 6
+            width: 308
+            height: 106
+            styles: card_style
+            scrollable: false
+            clickable: false
+            widgets:
+              - label:
+                  id: clock_time_label
+                  align: TOP_MID
+                  y: 2
+                  text: "--:--"
+                  styles: value_large_style
+              - label:
+                  id: clock_date_label
+                  align: BOTTOM_MID
+                  text: "--"
+                  text_font: font_date
+                  text_color: 0xFFFFFF
+
+        - obj:
+            x: 6
+            y: 118
+            width: 200
+            height: 106
+            styles: card_style
+            scrollable: false
+            clickable: false
+            widgets:
+              - label:
+                  text: Saugroboter
+                  styles: caption_style
+              - label:
+                  id: vacuum_state_label
+                  y: 18
+                  text: "--"
+                  styles: value_medium_style
+              - label:
+                  id: vacuum_last_cleaning_label
+                  y: 54
+                  text: "Zuletzt --"
+                  styles: detail_style
+              - bar:
+                  id: vacuum_battery_bar
+                  align: BOTTOM_LEFT
+                  y: -5
+                  width: 140
+                  height: 6
+                  min_value: 0
+                  max_value: 100
+                  value: 0
+                  styles: bar_style
+                  indicator:
+                    bg_color: 0x2ECC71
+                    radius: 3
+              - label:
+                  id: vacuum_battery_label
+                  align: BOTTOM_RIGHT
+                  text: "--"
+                  styles: detail_style
+
+        - obj:
+            x: 212
+            y: 118
+            width: 102
+            height: 106
+            styles: card_style
+            scrollable: false
+            clickable: false
+            widgets:
+              - label:
+                  text: Wallbox kW
+                  styles: caption_style
+              - label:
+                  id: wallbox_power_label
+                  y: 26
+                  text: "--"
+                  styles: value_medium_style
+
+    # ---------------- Standby face (not part of the swipe/cycle order) ----------------
+    - id: face_page
+      skip: true
+      scrollable: false
+      on_load:
+        - lambda: |-
+            id(face_visible) = true;
+            id(face_mood) = -1;  // force the mood to be applied again
+        - lvgl.widget.update:
+            id: [page_dot_energy, page_dot_heating, page_dot_status]
+            hidden: true
+        - script.execute: update_face_mood
+      on_unload:
+        - lambda: "id(face_visible) = false;"
+        - lvgl.widget.update:
+            id: [page_dot_energy, page_dot_heating, page_dot_status]
+            hidden: false
+      on_click:
+        - lvgl.page.show: energy_page
+      widgets:
+        # Eyes are not clickable so a tap anywhere reaches the page
+        - obj:
+            id: left_eye
+            align: CENTER
+            x: -${eye_offset_x}
+            y: ${eye_offset_y}
+            width: ${eye_size}
+            height: ${eye_size}
+            styles: eye_style
+            scrollable: false
+            clickable: false
+            widgets:
+              - obj:
+                  id: pupil_left
+                  align: CENTER
+                  width: ${pupil_size}
+                  height: ${pupil_size}
+                  radius: ${pupil_radius}
+                  styles: lid_style
+                  scrollable: false
+                  clickable: false
+                  widgets:
+                    # Glint: small highlight in the upper right of the pupil
+                    - obj:
+                        align: TOP_RIGHT
+                        x: -5
+                        y: 5
+                        width: ${glint_size}
+                        height: ${glint_size}
+                        radius: 5
+                        bg_color: ${eye_color}
+                        bg_opa: COVER
+                        border_width: 0
+                        clickable: false
+              - obj:
+                  id: top_lid_left
+                  align: TOP_MID
+                  width: 100%
+                  height: 40
+                  styles: lid_style
+                  clickable: false
+                  hidden: true
+              # Slanted lids: an 80 px thick line shifted up by 40 px, so only its lower
+              # edge reaches into the eye and everything above it is covered
+              - line:
+                  id: angry_lid_left
+                  x: -10
+                  y: -40
+                  points:
+                    - 0, 0
+                    - 130, 40
+                  line_width: 80
+                  line_color: 0x000000
+                  clickable: false
+                  hidden: true
+              - line:
+                  id: sad_lid_left
+                  x: -10
+                  y: -40
+                  points:
+                    - 0, 40
+                    - 130, 0
+                  line_width: 80
+                  line_color: 0x000000
+                  clickable: false
+                  hidden: true
+              # Happy: big circle below the eye cuts it into an arc
+              - obj:
+                  id: cheek_lid_left
+                  align: BOTTOM_MID
+                  y: 92
+                  width: 154
+                  height: 154
+                  radius: 77
+                  styles: lid_style
+                  clickable: false
+                  hidden: true
+              - obj:
+                  id: bottom_lid_left
+                  align: BOTTOM_MID
+                  width: 100%
+                  height: 20
+                  styles: lid_style
+                  clickable: false
+                  hidden: true
+        - obj:
+            id: right_eye
+            align: CENTER
+            x: ${eye_offset_x}
+            y: ${eye_offset_y}
+            width: ${eye_size}
+            height: ${eye_size}
+            styles: eye_style
+            scrollable: false
+            clickable: false
+            widgets:
+              - obj:
+                  id: pupil_right
+                  align: CENTER
+                  width: ${pupil_size}
+                  height: ${pupil_size}
+                  radius: ${pupil_radius}
+                  styles: lid_style
+                  scrollable: false
+                  clickable: false
+                  widgets:
+                    # Glint: small highlight in the upper right of the pupil
+                    - obj:
+                        align: TOP_RIGHT
+                        x: -5
+                        y: 5
+                        width: ${glint_size}
+                        height: ${glint_size}
+                        radius: 5
+                        bg_color: ${eye_color}
+                        bg_opa: COVER
+                        border_width: 0
+                        clickable: false
+              - obj:
+                  id: top_lid_right
+                  align: TOP_MID
+                  width: 100%
+                  height: 40
+                  styles: lid_style
+                  clickable: false
+                  hidden: true
+              # Slanted lids: see left eye
+              - line:
+                  id: angry_lid_right
+                  x: -10
+                  y: -40
+                  points:
+                    - 0, 40
+                    - 130, 0
+                  line_width: 80
+                  line_color: 0x000000
+                  clickable: false
+                  hidden: true
+              - line:
+                  id: sad_lid_right
+                  x: -10
+                  y: -40
+                  points:
+                    - 0, 0
+                    - 130, 40
+                  line_width: 80
+                  line_color: 0x000000
+                  clickable: false
+                  hidden: true
+              # Happy: big circle below the eye cuts it into an arc
+              - obj:
+                  id: cheek_lid_right
+                  align: BOTTOM_MID
+                  y: 92
+                  width: 154
+                  height: 154
+                  radius: 77
+                  styles: lid_style
+                  clickable: false
+                  hidden: true
+              - obj:
+                  id: bottom_lid_right
+                  align: BOTTOM_MID
+                  width: 100%
+                  height: 20
+                  styles: lid_style
+                  clickable: false
+                  hidden: true
+        - label:
+            id: face_zzz
+            align: TOP_RIGHT
+            x: -30
+            y: 24
+            text: "Z z z"
+            styles: caption_style
+            hidden: true

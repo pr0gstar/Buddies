@@ -1,0 +1,10 @@
+# ESPHome secrets and build output
+secrets.yaml
+.esphome/
+**/.esphome/
+.pioenvs/
+.piolibdeps/
+
+# OS / editor
+.DS_Store
+*.swp

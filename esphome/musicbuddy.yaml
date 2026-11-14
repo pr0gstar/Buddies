@@ -1,0 +1,1017 @@
+# Musicbuddy: ESPHome config for the ESP32-2432S024R "Cheap Yellow Display"
+# Kid-friendly Sonos/Spotify remote via Home Assistant.
+# Adjust the placeholders (entities, favourites, volume) before flashing.
+#
+# Requirements in Home Assistant:
+#  - Sonos integration, speaker as media_player (e.g. media_player.kids_room)
+#  - Spotify linked in the Sonos app, playlists saved as Sonos favourites
+#    (the favourites show up as "source" of the media_player)
+#  - Device options of the buddy in HA: "Allow the device to perform Home Assistant actions" on
+#  - Volume limit is set in the Sonos app, the speaker caps it itself
+# Secrets (ESPHome secrets.yaml): musicbuddy_api_key, wifi_ssid, wifi_password,
+# musicbuddy_fallback_password
+
+substitutions:
+  # Target speaker: selectable in HA on the device (select "Sonos-Box"), default is box 1.
+  # Replace the entity IDs with your own.
+  box1_name: "Kids room"
+  box1_entity: media_player.kids_room
+  box2_name: "Kitchen"
+  box2_entity: media_player.kitchen
+  box3_name: "Living room"
+  box3_entity: media_player.living_room
+  box4_name: "Office"
+  box4_entity: media_player.office
+  box5_name: "Roam"
+  box5_entity: media_player.sonos_roam_sl
+  # Address of HA in your network (currently unused, the track cover is too big for the RAM)
+  ha_url: "http://homeassistant.local:8123"
+  # Volume 0.0–1.0 per tap (the speaker sets the upper limit itself)
+  volume_step: "0.05"
+  # Tiles: name, Spotify link (Share -> Copy link) and cover image.
+  # Cover URL: open https://open.spotify.com/oembed?url=<link> in a browser, copy "thumbnail_url".
+  # New tile: add three lines here, one entry under image: and one tile on the page.
+  music1: "All songs"
+  music1_url: "https://open.spotify.com/playlist/YOUR_PLAYLIST_ID"
+  music1_cover: "https://image-cdn-ak.spotifycdn.com/image/ab67706c0000da8466b2cf97243b4ff738d370fc"
+  music2: "Party Songs"
+  music2_url: "https://open.spotify.com/album/2gmIZEtKxXvdDib0MJ3Elk"
+  music2_cover: "https://image-cdn-ak.spotifycdn.com/image/ab67616d00001e02e93b4be0c8020eb62c055ebb"
+  story1: "Film 1"
+  story1_url: "https://open.spotify.com/playlist/YOUR_PLAYLIST_ID"
+  story1_cover: "https://i.scdn.co/image/ab67616d00001e02ce87c558a9e71c452270772d"
+  story2: "Film 2"
+  story2_url: "https://open.spotify.com/album/57SIUrP27UFwFxKKWXEmuJ"
+  story2_cover: "https://image-cdn-ak.spotifycdn.com/image/ab67616d00001e02e53507e6cb0121935c1ad2f0"
+  story3: "Film 3"
+  story3_url: "https://open.spotify.com/album/7bB2Qm2ldjkV4UCgZSx6Id"
+  story3_cover: "https://image-cdn-fa.spotifycdn.com/image/ab67616d00001e02192b4e780efd8d40c9a24899"
+  story4: "Film 4"
+  story4_url: "https://open.spotify.com/album/1hhNtSsFWuqeNsV1gXiiQV"
+  story4_cover: "https://image-cdn-ak.spotifycdn.com/image/ab67616d00001e024f6e2711cbb20dbd86ab5b22"
+  # Brightness: 80 % while in use, eyes at 50 % after idle_timeout,
+  # display off after off_timeout (since the last touch). A tap wakes it to the player.
+  active_brightness: "80%"
+  idle_timeout: 60s
+  idle_brightness: "50%"
+  off_timeout: 5min
+  # Eyes from the Desk Buddy (reference robot, scaled by about 2.5)
+  eye_color: "0xFFFFFF"
+  eye_size: "90"
+  eye_radius: "20"
+  eye_height_half: "45"
+  eye_height_closed: "5"
+  eye_offset_x: "70"
+  eye_offset_y: "-10"
+  pupil_size: "40"
+  pupil_radius: "10"
+  glint_size: "10"
+  gaze_x_px: "15"
+  gaze_y_px: "10"
+  # Moods: playing = happy, paused = neutral, idle/off = sleepy
+  mood_neutral: "0"
+  mood_happy: "1"
+  mood_sleepy: "3"
+  glyphs_text: " !\"#&'()*+,-./0123456789:;?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[]_abcdefghijklmnopqrstuvwxyzÄÖÜäöüßéèáàñçøå’–"
+
+esphome:
+  name: musicbuddy-001
+  friendly_name: Musicbuddy 001
+  on_boot:
+    - light.turn_on:
+        id: display_backlight
+        brightness: ${active_brightness}
+
+esp32:
+  variant: esp32
+
+logger:
+
+api:
+  encryption:
+    key: !secret musicbuddy_api_key
+
+ota:
+  - platform: esphome
+    encryption:
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: Musicbuddy 001 Fallback Hotspot
+    password: !secret musicbuddy_fallback_password
+
+captive_portal:
+
+# ---------------------------------------------------------------------------
+# Hardware (same as the Desk Buddy)
+# ---------------------------------------------------------------------------
+spi:
+  id: spi_bus
+  clk_pin: GPIO14
+  mosi_pin: GPIO13
+  miso_pin: { number: GPIO12, ignore_strapping_warning: true }
+
+output:
+  - { platform: ledc, pin: GPIO27, id: backlight_pwm }
+
+light:
+  - platform: monochromatic
+    id: display_backlight
+    output: backlight_pwm
+    name: Display Backlight
+    restore_mode: ALWAYS_ON
+
+display:
+  - platform: mipi_spi
+    id: main_display
+    model: ILI9342
+    spi_id: spi_bus
+    data_rate: 40MHz
+    cs_pin: { number: GPIO15, ignore_strapping_warning: true }
+    dc_pin: { number: GPIO2, ignore_strapping_warning: true }
+    invert_colors: false
+    # This board needs BGR (model default): with rgb, red and blue were swapped
+    color_order: bgr
+    auto_clear_enabled: false
+    update_interval: never
+    dimensions:
+      width: 320
+      height: 240
+    transform:
+      swap_xy: false
+      mirror_x: false
+      mirror_y: true
+
+touchscreen:
+  - platform: xpt2046
+    id: main_touch
+    spi_id: spi_bus
+    cs_pin: GPIO33
+    interrupt_pin: GPIO36
+    calibration:
+      x_min: 225
+      x_max: 3835
+      y_min: 290
+      y_max: 3885
+    on_touch:
+      - light.turn_on:
+          id: display_backlight
+          brightness: ${active_brightness}
+
+font:
+  - file: "gfonts://Roboto@700"
+    id: font_title
+    size: 20
+    glyphs: ${glyphs_text}
+  - file: "gfonts://Roboto@500"
+    id: font_small
+    size: 15
+    glyphs: ${glyphs_text}
+  - file: "gfonts://Roboto@700"
+    id: font_tile
+    size: 17
+    glyphs: ${glyphs_text}
+
+# Covers: keep them small, the CYD has no PSRAM
+# Tile covers are downloaded from Spotify at compile time and stored in flash
+image:
+  - platform: file
+    file: "${music1_cover}"
+    id: img_music1
+    type: RGB565
+    resize: 90x90
+  - platform: file
+    file: "${music2_cover}"
+    id: img_music2
+    type: RGB565
+    resize: 90x90
+  - platform: file
+    file: "${story1_cover}"
+    id: img_story1
+    type: RGB565
+    resize: 90x90
+  - platform: file
+    file: "${story2_cover}"
+    id: img_story2
+    type: RGB565
+    resize: 90x90
+  - platform: file
+    file: "${story3_cover}"
+    id: img_story3
+    type: RGB565
+    resize: 90x90
+  - platform: file
+    file: "${story4_cover}"
+    id: img_story4
+    type: RGB565
+    resize: 90x90
+
+# ---------------------------------------------------------------------------
+# State
+# ---------------------------------------------------------------------------
+globals:
+  - id: face_visible
+    type: bool
+    initial_value: "false"
+  # Last applied mood; -1 = none yet (forces the next update)
+  - id: face_mood
+    type: int
+    initial_value: "-1"
+  - id: face_gaze_dx
+    type: int
+    initial_value: "0"
+  - id: face_gaze_dy
+    type: int
+    initial_value: "0"
+  - id: volume
+    type: float
+    initial_value: "0.2"
+  # Currently selected Sonos speaker and its data (set by refresh_ui)
+  - id: target
+    type: std::string
+    initial_value: '"${box2_entity}"'
+  - id: cur_state
+    type: std::string
+  - id: cur_title
+    type: std::string
+  - id: cur_artist
+    type: std::string
+
+select:
+  - platform: template
+    id: box_select
+    name: Sonos-Box
+    icon: mdi:speaker
+    options:
+      - "${box1_name}"
+      - "${box2_name}"
+      - "${box3_name}"
+      - "${box4_name}"
+      - "${box5_name}"
+    initial_option: "${box2_name}"
+    optimistic: true
+    restore_value: true
+    on_value:
+      - script.execute: refresh_ui
+
+interval:
+  # Eye animation like the Desk Buddy: blink about every 4 s, a suspicious look now and then, wandering gaze
+  - interval: 1s
+    then:
+      - if:
+          condition:
+            lambda: "return id(face_visible);"
+          then:
+            - script.execute: update_face_mood
+            - if:
+                condition:
+                  lambda: "return random_uint32() % 4 == 0;"
+                then:
+                  - if:
+                      condition:
+                        lambda: "return random_uint32() % 8 == 0;"
+                      then:
+                        - script.execute: face_suspicious
+                      else:
+                        - script.execute: face_blink
+  - interval: 500ms
+    then:
+      - if:
+          condition:
+            lambda: "return id(face_visible) && random_uint32() % 3 == 0;"
+          then:
+            - script.execute: face_glance
+
+script:
+  # Change volume by delta, always clamped to [0, upper limit]
+  - id: change_volume
+    parameters:
+      delta: float
+    then:
+      - lambda: |-
+          float v = id(volume) + delta;
+          id(volume) = v > 1.0f ? 1.0f : (v < 0.0f ? 0.0f : v);
+      - lvgl.bar.update:
+          id: volume_bar
+          value: !lambda return (int) (id(volume) * 100.0f);
+      - homeassistant.action:
+          action: media_player.volume_set
+          data_template:
+            entity_id: "{{ target }}"
+            volume_level: "{{ level }}"
+          variables:
+            target: !lambda return id(target);
+            level: !lambda return id(volume);
+
+  - id: player_action
+    parameters:
+      action_name: string
+    then:
+      - homeassistant.action:
+          action: !lambda return action_name;
+          data_template:
+            entity_id: "{{ target }}"
+          variables:
+            target: !lambda return id(target);
+
+  # Plays a Spotify link on the selected speaker (replaces the queue)
+  - id: play_spotify
+    parameters:
+      url: string
+    then:
+      - homeassistant.action:
+          action: media_player.play_media
+          data:
+            media_content_type: playlist
+            enqueue: replace
+          data_template:
+            entity_id: "{{ target }}"
+            media_content_id: "{{ url }}"
+          variables:
+            target: !lambda return id(target);
+            url: !lambda return url;
+      - lvgl.page.show: player_page
+
+  # Copies the data of the selected speaker into the UI
+  - id: refresh_ui
+    mode: restart
+    then:
+      - lambda: |-
+          size_t i = id(box_select).active_index().value_or(0);
+          if (i > 4) i = 0;
+          // Pick the value of the selected speaker from the five fixed subscriptions
+          auto pick = [i](const std::string &a, const std::string &b, const std::string &c,
+                          const std::string &d, const std::string &e) -> std::string {
+            const std::string *v[] = {&a, &b, &c, &d, &e};
+            return *v[i];
+          };
+          const char *entities[] = {"${box1_entity}", "${box2_entity}", "${box3_entity}", "${box4_entity}", "${box5_entity}"};
+          float volumes[] = {id(b1_volume).state, id(b2_volume).state, id(b3_volume).state, id(b4_volume).state, id(b5_volume).state};
+          id(target) = entities[i];
+          id(cur_state) = pick(id(b1_state).state, id(b2_state).state, id(b3_state).state, id(b4_state).state, id(b5_state).state);
+          id(cur_title) = pick(id(b1_title).state, id(b2_title).state, id(b3_title).state, id(b4_title).state, id(b5_title).state);
+          id(cur_artist) = pick(id(b1_artist).state, id(b2_artist).state, id(b3_artist).state, id(b4_artist).state, id(b5_artist).state);
+          if (!std::isnan(volumes[i])) id(volume) = volumes[i];
+      - lvgl.label.update:
+          id: play_icon
+          text: !lambda 'return std::string(id(cur_state) == "playing" ? "\uF04C" : "\uF04B");'
+      - lvgl.label.update:
+          id: title_label
+          text: !lambda 'return id(cur_title).empty() ? std::string("Keine Musik") : id(cur_title);'
+      - lvgl.label.update:
+          id: artist_label
+          text: !lambda return id(cur_artist);
+      - lvgl.bar.update:
+          id: volume_bar
+          value: !lambda return (int) (id(volume) * 100.0f);
+      # Show the cover of the last started tile while the speaker is playing or paused
+      - if:
+          condition:
+            lambda: return id(cur_state) != "playing" && id(cur_state) != "paused";
+          then:
+            - lvgl.widget.hide: cover_widget
+
+  # --- Standby eyes (from the Desk Buddy) ---
+  - id: update_face_mood
+    then:
+      - lambda: |-
+          int mood = ${mood_neutral};
+          if (id(cur_state) == "playing") mood = ${mood_happy};
+          else if (id(cur_state) != "paused") mood = ${mood_sleepy};
+          if (mood == id(face_mood)) return;
+          id(face_mood) = mood;
+          id(face_apply_mood).execute();
+
+  - id: face_apply_mood
+    then:
+      - lambda: |-
+          switch (id(face_mood)) {
+            case ${mood_happy}: id(face_mood_happy).execute(); break;
+            case ${mood_sleepy}: id(face_mood_sleepy).execute(); break;
+            default: id(face_mood_neutral).execute(); break;
+          }
+
+  # Every mood starts from open eyes with pupils and no lids
+  - id: face_reset
+    then:
+      - lvgl.widget.update:
+          id: [top_lid_left, top_lid_right, cheek_lid_left, cheek_lid_right, bottom_lid_left, bottom_lid_right, face_zzz]
+          hidden: true
+      - lvgl.widget.update:
+          id: [pupil_left, pupil_right]
+          hidden: false
+
+  - id: face_set_eyes
+    parameters:
+      left_w: int
+      left_h: int
+      right_w: int
+      right_h: int
+    then:
+      - lvgl.widget.update:
+          id: left_eye
+          width: !lambda "return left_w;"
+          height: !lambda "return left_h;"
+      - lvgl.widget.update:
+          id: right_eye
+          width: !lambda "return right_w;"
+          height: !lambda "return right_h;"
+
+  # Eye sizes per mood are the reference values scaled by about 2.5
+  - id: face_mood_neutral
+    then:
+      - script.execute: face_reset
+      - script.execute: {id: face_set_eyes, left_w: 90, left_h: 90, right_w: 90, right_h: 90}
+
+  # Wide and flat, cheeks push up from below
+  - id: face_mood_happy
+    then:
+      - script.execute: face_reset
+      - script.execute: {id: face_set_eyes, left_w: 100, left_h: 80, right_w: 100, right_h: 80}
+      - lvgl.widget.update:
+          id: [cheek_lid_left, cheek_lid_right]
+          hidden: false
+
+  - id: face_mood_sleepy
+    then:
+      - script.execute: face_reset
+      - script.execute: {id: face_set_eyes, left_w: 95, left_h: 75, right_w: 95, right_h: 75}
+      - lvgl.widget.update:
+          id: [top_lid_left, top_lid_right]
+          height: 40
+          hidden: false
+      - lvgl.widget.update:
+          id: face_zzz
+          hidden: false
+
+  - id: face_suspicious
+    mode: single
+    then:
+      - script.execute: face_reset
+      - script.execute: {id: face_set_eyes, left_w: 90, left_h: 50, right_w: 90, right_h: 105}
+      - lvgl.widget.update:
+          id: top_lid_left
+          height: 23
+          hidden: false
+      - lvgl.widget.update:
+          id: bottom_lid_right
+          hidden: false
+      - delay: 1500ms
+      - script.execute: face_apply_mood
+
+  - id: face_blink
+    mode: single
+    then:
+      - lvgl.widget.update:
+          id: [pupil_left, pupil_right]
+          hidden: true
+      - lvgl.widget.update:
+          id: [left_eye, right_eye]
+          height: ${eye_height_half}
+      - delay: 40ms
+      - lvgl.widget.update:
+          id: [left_eye, right_eye]
+          height: ${eye_height_closed}
+      - delay: 80ms
+      - lvgl.widget.update:
+          id: [left_eye, right_eye]
+          height: ${eye_height_half}
+      - delay: 40ms
+      - script.execute: face_apply_mood
+
+  # Pupils jump to one of 10 directions (4x centre); the eyes follow by 30 %
+  - id: face_glance
+    then:
+      - lambda: |-
+          static const int8_t GAZE_X[] = {0, 0, 0, 0, -1, 1, -1, 1, 1, -1};
+          static const int8_t GAZE_Y[] = {0, 0, 0, 0, -1, -1, 1, 1, 0, 0};
+          constexpr uint32_t GAZE_DIRECTIONS = sizeof(GAZE_X) / sizeof(GAZE_X[0]);
+          const uint32_t direction = random_uint32() % GAZE_DIRECTIONS;
+          id(face_gaze_dx) = GAZE_X[direction] * ${gaze_x_px};
+          id(face_gaze_dy) = GAZE_Y[direction] * ${gaze_y_px};
+      - lvgl.widget.update:
+          id: [pupil_left, pupil_right]
+          x: !lambda "return id(face_gaze_dx);"
+          y: !lambda "return id(face_gaze_dy);"
+      - lvgl.widget.update:
+          id: left_eye
+          x: !lambda "return -${eye_offset_x} + id(face_gaze_dx) * 3 / 10;"
+          y: !lambda "return ${eye_offset_y} + id(face_gaze_dy) * 3 / 10;"
+      - lvgl.widget.update:
+          id: right_eye
+          x: !lambda "return ${eye_offset_x} + id(face_gaze_dx) * 3 / 10;"
+          y: !lambda "return ${eye_offset_y} + id(face_gaze_dy) * 3 / 10;"
+
+# ---------------------------------------------------------------------------
+# Data from Home Assistant
+# ---------------------------------------------------------------------------
+text_sensor:
+  # Every speaker is subscribed permanently (5 speakers x 4 values + volume), only the selected one is shown (refresh_ui)
+  - { platform: homeassistant, id: b1_state, entity_id: "${box1_entity}", on_value: { then: [ { script.execute: refresh_ui } ] } }
+  - { platform: homeassistant, id: b1_title, entity_id: "${box1_entity}", attribute: media_title, on_value: { then: [ { script.execute: refresh_ui } ] } }
+  - { platform: homeassistant, id: b1_artist, entity_id: "${box1_entity}", attribute: media_artist, on_value: { then: [ { script.execute: refresh_ui } ] } }
+  - { platform: homeassistant, id: b2_state, entity_id: "${box2_entity}", on_value: { then: [ { script.execute: refresh_ui } ] } }
+  - { platform: homeassistant, id: b2_title, entity_id: "${box2_entity}", attribute: media_title, on_value: { then: [ { script.execute: refresh_ui } ] } }
+  - { platform: homeassistant, id: b2_artist, entity_id: "${box2_entity}", attribute: media_artist, on_value: { then: [ { script.execute: refresh_ui } ] } }
+  - { platform: homeassistant, id: b3_state, entity_id: "${box3_entity}", on_value: { then: [ { script.execute: refresh_ui } ] } }
+  - { platform: homeassistant, id: b3_title, entity_id: "${box3_entity}", attribute: media_title, on_value: { then: [ { script.execute: refresh_ui } ] } }
+  - { platform: homeassistant, id: b3_artist, entity_id: "${box3_entity}", attribute: media_artist, on_value: { then: [ { script.execute: refresh_ui } ] } }
+  - { platform: homeassistant, id: b4_state, entity_id: "${box4_entity}", on_value: { then: [ { script.execute: refresh_ui } ] } }
+  - { platform: homeassistant, id: b4_title, entity_id: "${box4_entity}", attribute: media_title, on_value: { then: [ { script.execute: refresh_ui } ] } }
+  - { platform: homeassistant, id: b4_artist, entity_id: "${box4_entity}", attribute: media_artist, on_value: { then: [ { script.execute: refresh_ui } ] } }
+  - { platform: homeassistant, id: b5_state, entity_id: "${box5_entity}", on_value: { then: [ { script.execute: refresh_ui } ] } }
+  - { platform: homeassistant, id: b5_title, entity_id: "${box5_entity}", attribute: media_title, on_value: { then: [ { script.execute: refresh_ui } ] } }
+  - { platform: homeassistant, id: b5_artist, entity_id: "${box5_entity}", attribute: media_artist, on_value: { then: [ { script.execute: refresh_ui } ] } }
+
+sensor:
+  - { platform: homeassistant, id: b1_volume, entity_id: "${box1_entity}", attribute: volume_level, on_value: { then: [ { script.execute: refresh_ui } ] } }
+  - { platform: homeassistant, id: b2_volume, entity_id: "${box2_entity}", attribute: volume_level, on_value: { then: [ { script.execute: refresh_ui } ] } }
+  - { platform: homeassistant, id: b3_volume, entity_id: "${box3_entity}", attribute: volume_level, on_value: { then: [ { script.execute: refresh_ui } ] } }
+  - { platform: homeassistant, id: b4_volume, entity_id: "${box4_entity}", attribute: volume_level, on_value: { then: [ { script.execute: refresh_ui } ] } }
+  - { platform: homeassistant, id: b5_volume, entity_id: "${box5_entity}", attribute: volume_level, on_value: { then: [ { script.execute: refresh_ui } ] } }
+
+# ---------------------------------------------------------------------------
+# UI: player, music/audio story picker, favourites per category
+# ---------------------------------------------------------------------------
+lvgl:
+  buffer_size: 25%
+  bg_color: 0x000000
+  text_color: 0xFFFFFF
+  on_idle:
+    - timeout: ${idle_timeout}
+      then:
+        - lvgl.page.show: face_page
+        - light.turn_on:
+            id: display_backlight
+            brightness: ${idle_brightness}
+    - timeout: ${off_timeout}
+      then:
+        - light.turn_off: display_backlight
+
+  style_definitions:
+    - id: eye_style
+      bg_color: ${eye_color}
+      bg_opa: COVER
+      border_width: 0
+      radius: ${eye_radius}
+      pad_all: 0
+      clip_corner: true
+    - id: lid_style
+      bg_color: 0x000000
+      bg_opa: COVER
+      border_width: 0
+      pad_all: 0
+    - id: big_button
+      # Only border and icon, no fill: the covers are the only colourful thing
+      bg_color: 0x000000
+      bg_opa: COVER
+      border_width: 2
+      border_color: 0xFFFFFF
+      radius: 18
+      text_color: 0xFFFFFF
+    - id: tile_style
+      bg_color: 0x000000
+      bg_opa: COVER
+      border_width: 2
+      border_color: 0xFFFFFF
+      radius: 12
+      pad_all: 2
+      text_color: 0xFFFFFF
+      text_font: font_tile
+
+  pages:
+    # ---------------- Player ----------------
+    - id: player_page
+      widgets:
+        # Tapping the cover opens the music/audio story picker
+        - obj:
+            x: 8
+            y: 8
+            width: 120
+            height: 120
+            radius: 12
+            bg_color: 0x000000
+            border_width: 2
+            border_color: 0xFFFFFF
+            pad_all: 0
+            on_click:
+              - lvgl.page.show: choose_page
+            widgets:
+              - label:
+                  align: CENTER
+                  text: ""
+                  text_font: montserrat_48
+                  text_color: 0xFFFFFF
+                  clickable: false
+              - image:
+                  id: cover_widget
+                  align: CENTER
+                  # Tile cover (90 px) scaled up to 120 px. The real track cover
+                  # (about 166 KB JPEG) does not fit into memory without PSRAM.
+                  src: img_music1
+                  zoom: 1.33
+                  hidden: true
+                  clickable: false
+        - label:
+            id: title_label
+            x: 138
+            y: 12
+            width: 174
+            text: "Keine Musik"
+            text_font: font_title
+            long_mode: SCROLL_CIRCULAR
+        - label:
+            id: artist_label
+            x: 138
+            y: 42
+            width: 174
+            text: ""
+            text_font: font_small
+            text_color: 0xFFFFFF
+            long_mode: SCROLL_CIRCULAR
+        # Volume: [-] bar [+]
+        - button:
+            x: 138
+            y: 76
+            width: 52
+            height: 52
+            styles: big_button
+            on_click:
+              - script.execute:
+                  id: change_volume
+                  delta: -${volume_step}
+            widgets:
+              - label:
+                  align: CENTER
+                  text: ""
+                  text_font: montserrat_28
+        - bar:
+            id: volume_bar
+            x: 196
+            y: 96
+            width: 58
+            height: 12
+            min_value: 0
+            max_value: 100
+            value: 50
+            bg_color: 0x000000
+            border_width: 1
+            border_color: 0xFFFFFF
+            indicator:
+              bg_color: 0xFFFFFF
+        - button:
+            x: 260
+            y: 76
+            width: 52
+            height: 52
+            styles: big_button
+            on_click:
+              - script.execute:
+                  id: change_volume
+                  delta: ${volume_step}
+            widgets:
+              - label:
+                  align: CENTER
+                  text: ""
+                  text_font: montserrat_28
+        # Transport: previous, play/pause, next
+        - button:
+            x: 8
+            y: 140
+            width: 90
+            height: 92
+            styles: big_button
+            on_click:
+              - script.execute:
+                  id: player_action
+                  action_name: media_player.media_previous_track
+            widgets:
+              - label:
+                  align: CENTER
+                  text: ""
+                  text_font: montserrat_48
+        - button:
+            x: 104
+            y: 140
+            width: 112
+            height: 92
+            styles: big_button
+            on_click:
+              - script.execute:
+                  id: player_action
+                  action_name: media_player.media_play_pause
+            widgets:
+              - label:
+                  id: play_icon
+                  align: CENTER
+                  text: ""
+                  text_font: montserrat_48
+        - button:
+            x: 222
+            y: 140
+            width: 90
+            height: 92
+            styles: big_button
+            on_click:
+              - script.execute:
+                  id: player_action
+                  action_name: media_player.media_next_track
+            widgets:
+              - label:
+                  align: CENTER
+                  text: ""
+                  text_font: montserrat_48
+
+    # ---------------- Picker: music or audio stories ----------------
+    - id: choose_page
+      widgets:
+        - button:
+            x: 8
+            y: 8
+            width: 148
+            height: 168
+            styles: tile_style
+            on_click:
+              - lvgl.page.show: music_page
+            widgets:
+              - label: { align: CENTER, y: -18, text: "\uF001", text_font: montserrat_48 }
+              - label: { align: CENTER, y: 36, text: "Musik", text_font: font_title }
+        - button:
+            x: 164
+            y: 8
+            width: 148
+            height: 168
+            styles: tile_style
+            on_click:
+              - lvgl.page.show: story_page
+            widgets:
+              # Audio stories: no book symbol in the LVGL fonts, so the eye symbol is a stand-in
+              - label: { align: CENTER, y: -18, text: "\uF06E", text_font: montserrat_48 }
+              - label: { align: CENTER, y: 36, text: "Hörspiele", text_font: font_title }
+        - button:
+            x: 8
+            y: 184
+            width: 304
+            height: 48
+            styles: big_button
+            on_click:
+              - lvgl.page.show: player_page
+            widgets:
+              - label: { align: CENTER, text: "\uF053", text_font: montserrat_28 }
+
+    # ---------------- Music ----------------
+    - id: music_page
+      widgets:
+        - button:
+            x: 5
+            y: 12
+            width: 98
+            height: 98
+            styles: tile_style
+            on_click:
+              - script.execute: { id: play_spotify, url: "${music1_url}" }
+              - lvgl.image.update: { id: cover_widget, src: img_music1 }
+              - lvgl.widget.show: cover_widget
+            widgets:
+              - image: { align: CENTER, src: img_music1, clickable: false }
+        - button:
+            x: 111
+            y: 12
+            width: 98
+            height: 98
+            styles: tile_style
+            on_click:
+              - script.execute: { id: play_spotify, url: "${music2_url}" }
+              - lvgl.image.update: { id: cover_widget, src: img_music2 }
+              - lvgl.widget.show: cover_widget
+            widgets:
+              - image: { align: CENTER, src: img_music2, clickable: false }
+        - button:
+            x: 217
+            y: 130
+            width: 98
+            height: 98
+            styles: tile_style
+            bg_color: 0x000000
+            border_width: 2
+            border_color: 0xFFFFFF
+            on_click:
+              - lvgl.page.show: choose_page
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\uF053"
+                  text_font: montserrat_48
+
+    # ---------------- Audio stories ----------------
+    - id: story_page
+      widgets:
+        - button:
+            x: 5
+            y: 12
+            width: 98
+            height: 98
+            styles: tile_style
+            on_click:
+              - script.execute: { id: play_spotify, url: "${story1_url}" }
+              - lvgl.image.update: { id: cover_widget, src: img_story1 }
+              - lvgl.widget.show: cover_widget
+            widgets:
+              - image: { align: CENTER, src: img_story1, clickable: false }
+        - button:
+            x: 111
+            y: 12
+            width: 98
+            height: 98
+            styles: tile_style
+            on_click:
+              - script.execute: { id: play_spotify, url: "${story2_url}" }
+              - lvgl.image.update: { id: cover_widget, src: img_story2 }
+              - lvgl.widget.show: cover_widget
+            widgets:
+              - image: { align: CENTER, src: img_story2, clickable: false }
+        - button:
+            x: 217
+            y: 12
+            width: 98
+            height: 98
+            styles: tile_style
+            on_click:
+              - script.execute: { id: play_spotify, url: "${story3_url}" }
+              - lvgl.image.update: { id: cover_widget, src: img_story3 }
+              - lvgl.widget.show: cover_widget
+            widgets:
+              - image: { align: CENTER, src: img_story3, clickable: false }
+        - button:
+            x: 5
+            y: 130
+            width: 98
+            height: 98
+            styles: tile_style
+            on_click:
+              - script.execute: { id: play_spotify, url: "${story4_url}" }
+              - lvgl.image.update: { id: cover_widget, src: img_story4 }
+              - lvgl.widget.show: cover_widget
+            widgets:
+              - image: { align: CENTER, src: img_story4, clickable: false }
+        - button:
+            x: 217
+            y: 130
+            width: 98
+            height: 98
+            styles: tile_style
+            bg_color: 0x000000
+            border_width: 2
+            border_color: 0xFFFFFF
+            on_click:
+              - lvgl.page.show: choose_page
+            widgets:
+              - label:
+                  align: CENTER
+                  text: "\uF053"
+                  text_font: montserrat_48
+
+    - id: face_page
+      skip: true
+      scrollable: false
+      on_load:
+        - lambda: |-
+            id(face_visible) = true;
+            id(face_mood) = -1;  // force the mood to be applied again
+        - script.execute: update_face_mood
+      on_unload:
+        - lambda: "id(face_visible) = false;"
+      on_click:
+        - lvgl.page.show: player_page
+      widgets:
+        # Eyes are not clickable so a tap anywhere reaches the page
+        - obj:
+            id: left_eye
+            align: CENTER
+            x: -${eye_offset_x}
+            y: ${eye_offset_y}
+            width: ${eye_size}
+            height: ${eye_size}
+            styles: eye_style
+            scrollable: false
+            clickable: false
+            widgets:
+              - obj:
+                  id: pupil_left
+                  align: CENTER
+                  width: ${pupil_size}
+                  height: ${pupil_size}
+                  radius: ${pupil_radius}
+                  styles: lid_style
+                  scrollable: false
+                  clickable: false
+                  widgets:
+                    # Glint: small highlight in the upper right of the pupil
+                    - obj:
+                        align: TOP_RIGHT
+                        x: -5
+                        y: 5
+                        width: ${glint_size}
+                        height: ${glint_size}
+                        radius: 5
+                        bg_color: ${eye_color}
+                        bg_opa: COVER
+                        border_width: 0
+                        clickable: false
+              - obj:
+                  id: top_lid_left
+                  align: TOP_MID
+                  width: 100%
+                  height: 40
+                  styles: lid_style
+                  clickable: false
+                  hidden: true
+              # Happy: big circle below the eye cuts it into an arc
+              - obj:
+                  id: cheek_lid_left
+                  align: BOTTOM_MID
+                  y: 92
+                  width: 154
+                  height: 154
+                  radius: 77
+                  styles: lid_style
+                  clickable: false
+                  hidden: true
+              - obj:
+                  id: bottom_lid_left
+                  align: BOTTOM_MID
+                  width: 100%
+                  height: 20
+                  styles: lid_style
+                  clickable: false
+                  hidden: true
+        - obj:
+            id: right_eye
+            align: CENTER
+            x: ${eye_offset_x}
+            y: ${eye_offset_y}
+            width: ${eye_size}
+            height: ${eye_size}
+            styles: eye_style
+            scrollable: false
+            clickable: false
+            widgets:
+              - obj:
+                  id: pupil_right
+                  align: CENTER
+                  width: ${pupil_size}
+                  height: ${pupil_size}
+                  radius: ${pupil_radius}
+                  styles: lid_style
+                  scrollable: false
+                  clickable: false
+                  widgets:
+                    # Glint: small highlight in the upper right of the pupil
+                    - obj:
+                        align: TOP_RIGHT
+                        x: -5
+                        y: 5
+                        width: ${glint_size}
+                        height: ${glint_size}
+                        radius: 5
+                        bg_color: ${eye_color}
+                        bg_opa: COVER
+                        border_width: 0
+                        clickable: false
+              - obj:
+                  id: top_lid_right
+                  align: TOP_MID
+                  width: 100%
+                  height: 40
+                  styles: lid_style
+                  clickable: false
+                  hidden: true
+              # Happy: big circle below the eye cuts it into an arc
+              - obj:
+                  id: cheek_lid_right
+                  align: BOTTOM_MID
+                  y: 92
+                  width: 154
+                  height: 154
+                  radius: 77
+                  styles: lid_style
+                  clickable: false
+                  hidden: true
+              - obj:
+                  id: bottom_lid_right
+                  align: BOTTOM_MID
+                  width: 100%
+                  height: 20
+                  styles: lid_style
+                  clickable: false
+                  hidden: true
+        - label:
+            id: face_zzz
+            align: TOP_RIGHT
+            x: -30
+            y: 24
+            text: "Z z z"
+            text_font: font_small
+            hidden: true

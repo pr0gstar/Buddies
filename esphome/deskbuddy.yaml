@@ -13,6 +13,13 @@ esphome:
 
 esp32:
   variant: esp32
+  framework:
+    type: esp-idf
+    advanced:
+      # Recommended by the ESPHome log: smaller firmware, more IRAM
+      minimum_chip_revision: "3.1"
+      sram1_as_iram: true
+      flash_chip: generic
 
 logger:
 
@@ -35,6 +42,8 @@ wifi:
 captive_portal:
 
 substitutions:
+  # Desk lamp shown on the light page
+  desk_light: light.desk_lamp
   # Auto page cycling: start after this much time without touch ...
   page_idle_timeout: 30s
   # ... then switch to the next page at this interval.
@@ -69,7 +78,7 @@ substitutions:
   face_surprised_load_w: "6000"
   face_sad_battery_pct: "10"
   # Glyphs for the fonts (saves flash)
-  glyphs_text: " !\"%'()+,-./0123456789:;?ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÄÖÜäöüß°"
+  glyphs_text: " !\"%'()+,-./0123456789:;?ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÄÖÜäöüß°·"
   glyphs_value: " %+-.0123456789:°"
 
 # ---------------------------------------------------------------------------
@@ -114,6 +123,13 @@ display:
     invert_colors: false
     # Model default is BGR; this panel swapped red and blue with it
     color_order: rgb
+    # Gamma curve ESPHome ships for the CYD with ILI9342 (model "ESP32-2432S028-9342").
+    # The ILI9342 default curve gives a broken grey ramp on this panel (dark greys far too
+    # bright and bluish). Confirmed on the Music Buddy 16.11.2026.
+    init_sequence:
+      - [0x26, 0x01]
+      - [0xE0, 0x00, 0x0C, 0x11, 0x04, 0x11, 0x08, 0x37, 0x89, 0x4C, 0x06, 0x0C, 0x0A, 0x2E, 0x34, 0x0F]
+      - [0xE1, 0x00, 0x0B, 0x11, 0x05, 0x13, 0x09, 0x33, 0x67, 0x48, 0x07, 0x0E, 0x0B, 0x23, 0x33, 0x0F]
     auto_clear_enabled: false
     update_interval: never
     dimensions:
@@ -220,6 +236,19 @@ switch:
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
     entity_category: config
+  # Color test: turn on in HA, shows pure colors and a grey ramp.
+  # Red patch not red -> flip color_order (rgb/bgr) in the display block.
+  - platform: template
+    id: color_test
+    name: Farbtest
+    icon: mdi:palette
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+    entity_category: config
+    turn_on_action:
+      - lvgl.page.show: test_page
+    turn_off_action:
+      - lvgl.page.show: energy_page
 
 # Pick a face mood by hand in HA (demo, photos). "Auto" = mood from house data.
 select:
@@ -251,7 +280,7 @@ interval:
     then:
       - if:
           condition:
-            lambda: "return !id(face_visible);"
+            lambda: "return !id(face_visible) && !id(color_test).state;"
           then:
             - if:
                 condition:
@@ -301,6 +330,46 @@ interval:
             - script.execute: face_glance
 
 script:
+  # Refresh the light page from the lamp state in HA
+  - id: desk_light_refresh
+    then:
+      - lvgl.label.update:
+          id: desk_light_state_label
+          text: !lambda |-
+            if (id(desk_light_state).state != "on") return std::string("Aus");
+            float b = id(desk_light_brightness).state;
+            if (std::isnan(b)) return std::string("An");
+            return "An · " + to_string((int) roundf(b * 100.0f / 255.0f)) + " %";
+      - lvgl.widget.update:
+          id: desk_light_power
+          state:
+            checked: !lambda return id(desk_light_state).state == "on";
+      - if:
+          condition:
+            lambda: return !std::isnan(id(desk_light_brightness).state);
+          then:
+            - lvgl.slider.update:
+                id: desk_light_slider
+                value: !lambda return (int) roundf(id(desk_light_brightness).state * 100.0f / 255.0f);
+      - lvgl.widget.update:
+          id: desk_light_warm
+          state:
+            checked: !lambda |-
+              float k = id(desk_light_kelvin).state;
+              return id(desk_light_state).state == "on" && !std::isnan(k) && k < 3300;
+      - lvgl.widget.update:
+          id: desk_light_neutral
+          state:
+            checked: !lambda |-
+              float k = id(desk_light_kelvin).state;
+              return id(desk_light_state).state == "on" && !std::isnan(k) && k >= 3300 && k < 5200;
+      - lvgl.widget.update:
+          id: desk_light_cold
+          state:
+            checked: !lambda |-
+              float k = id(desk_light_kelvin).state;
+              return id(desk_light_state).state == "on" && !std::isnan(k) && k >= 5200;
+
   - id: show_next_page
     then:
       - lvgl.page.next:
@@ -378,10 +447,11 @@ script:
     then:
       - lvgl.widget.update:
           id: [top_lid_left, top_lid_right, angry_lid_left, angry_lid_right, sad_lid_left, sad_lid_right,
-               cheek_lid_left, cheek_lid_right, bottom_lid_left, bottom_lid_right, face_zzz]
+               cheek_lid_left, cheek_lid_right, bottom_lid_left, bottom_lid_right, face_zzz, face_mouth]
           hidden: true
       - lvgl.widget.update:
           id: [pupil_left, pupil_right]
+          y: !lambda "return id(face_gaze_dy);"
           hidden: false
 
   - id: face_set_eyes
@@ -406,13 +476,16 @@ script:
       - script.execute: face_reset
       - script.execute: {id: face_set_eyes, left_w: 90, left_h: 90, right_w: 90, right_h: 90}
 
-  # Wide and flat, cheeks push up from below
+  # Happy: eyes keep their pupils, cheeks push up from below, gaze slightly up, plus a smile
   - id: face_mood_happy
     then:
       - script.execute: face_reset
-      - script.execute: {id: face_set_eyes, left_w: 100, left_h: 80, right_w: 100, right_h: 80}
+      - script.execute: {id: face_set_eyes, left_w: 90, left_h: 84, right_w: 90, right_h: 84}
       - lvgl.widget.update:
-          id: [cheek_lid_left, cheek_lid_right]
+          id: [pupil_left, pupil_right]
+          y: !lambda "return id(face_gaze_dy) - 8;"
+      - lvgl.widget.update:
+          id: [cheek_lid_left, cheek_lid_right, face_mouth]
           hidden: false
 
   - id: face_mood_surprised
@@ -437,7 +510,7 @@ script:
   - id: face_mood_angry
     then:
       - script.execute: face_reset
-      - script.execute: {id: face_set_eyes, left_w: 85, left_h: 80, right_w: 85, right_h: 80}
+      - script.execute: {id: face_set_eyes, left_w: 85, left_h: 90, right_w: 85, right_h: 90}
       - lvgl.widget.update:
           id: [angry_lid_left, angry_lid_right]
           hidden: false
@@ -531,6 +604,21 @@ script:
 # Sensors (Home Assistant values are internal: not re-exported to HA)
 # ---------------------------------------------------------------------------
 sensor:
+  # Desk lamp: brightness (0-255) and colour temperature (Kelvin) from HA
+  - platform: homeassistant
+    id: desk_light_brightness
+    entity_id: ${desk_light}
+    attribute: brightness
+    internal: true
+    on_value:
+      - script.execute: desk_light_refresh
+  - platform: homeassistant
+    id: desk_light_kelvin
+    entity_id: ${desk_light}
+    attribute: color_temp_kelvin
+    internal: true
+    on_value:
+      - script.execute: desk_light_refresh
   # Light sensor (LDR) for automatic backlight. Exposed to HA for calibration.
   - platform: adc
     id: light_sensor_voltage
@@ -572,7 +660,7 @@ sensor:
           call.set_transition_length(TRANSITION_MS);
           call.perform();
 
-  # --- Energy (power values in kW, unit shown in the card caption) ---
+  # --- Energie (power values in kW, unit shown in the card caption) ---
   - platform: homeassistant
     id: pv_power
     entity_id: sensor.solar_power
@@ -677,7 +765,7 @@ sensor:
           id: grid_today_label
           text: !lambda 'return std::isnan(x) ? std::string("heute --") : str_sprintf("heute %.1f kWh", x);'
 
-  # --- Heating ---
+  # --- Heizung ---
   - platform: homeassistant
     id: leaving_water_temperature
     entity_id: sensor.heat_pump_flow_temperature
@@ -778,6 +866,12 @@ sensor:
           text: !lambda 'return std::isnan(x) ? std::string("--") : str_sprintf("%.1f", x / 1000.0f);'
 
 text_sensor:
+  - platform: homeassistant
+    id: desk_light_state
+    entity_id: ${desk_light}
+    internal: true
+    on_value:
+      - script.execute: desk_light_refresh
   - platform: homeassistant
     id: heating_mode
     entity_id: climate.heat_pump_flow_offset
@@ -912,7 +1006,11 @@ lvgl:
     - id: eye_style
       bg_color: ${eye_color}
       bg_opa: COVER
-      border_width: 0
+      # Black border drawn after the lids (as on the Music Buddy): hides the thin bright
+      # edge arc that otherwise stays visible at the covered eye corners
+      border_width: 2
+      border_color: 0x000000
+      border_post: true
       radius: ${eye_radius}
       pad_all: 0
       clip_corner: true
@@ -928,7 +1026,7 @@ lvgl:
       - obj:
           id: page_dot_energy
           align: BOTTOM_MID
-          x: -14
+          x: -21
           y: -4
           styles: page_dot_style
           clickable: false
@@ -939,7 +1037,7 @@ lvgl:
       - obj:
           id: page_dot_heating
           align: BOTTOM_MID
-          x: 0
+          x: -7
           y: -4
           styles: page_dot_style
           clickable: false
@@ -948,7 +1046,16 @@ lvgl:
       - obj:
           id: page_dot_status
           align: BOTTOM_MID
-          x: 14
+          x: 7
+          y: -4
+          styles: page_dot_style
+          clickable: false
+          checked:
+            bg_color: 0x0A84FF
+      - obj:
+          id: page_dot_light
+          align: BOTTOM_MID
+          x: 21
           y: -4
           styles: page_dot_style
           clickable: false
@@ -956,7 +1063,7 @@ lvgl:
             bg_color: 0x0A84FF
 
   pages:
-    # ---------------- Energy: 2x2 (battery, PV / house, grid) ----------------
+    # ---------------- Energie: 2x2 (Akku, PV / Haus, Netz) ----------------
     - id: energy_page
       scrollable: false
       on_swipe_left:
@@ -971,7 +1078,7 @@ lvgl:
             state:
               checked: true
         - lvgl.widget.update:
-            id: [page_dot_heating, page_dot_status]
+            id: [page_dot_heating, page_dot_status, page_dot_light]
             state:
               checked: false
       widgets:
@@ -1079,7 +1186,7 @@ lvgl:
                   text: "heute --"
                   styles: detail_style
 
-    # ---------------- Heating: indoor, outdoor / flow, hot water, heat pump ----------------
+    # ---------------- Heizung: Innen, Aussen / Vorlauf, Warmwasser, WP ----------------
     - id: heating_page
       scrollable: false
       on_swipe_left:
@@ -1094,7 +1201,7 @@ lvgl:
             state:
               checked: true
         - lvgl.widget.update:
-            id: [page_dot_energy, page_dot_status]
+            id: [page_dot_energy, page_dot_status, page_dot_light]
             state:
               checked: false
       widgets:
@@ -1226,7 +1333,7 @@ lvgl:
                   text: "heute --"
                   styles: detail_style
 
-    # ---------------- Status: clock / robot vacuum, wallbox ----------------
+    # ---------------- Status: Uhr / Saugroboter, Wallbox ----------------
     - id: status_page
       scrollable: false
       on_swipe_left:
@@ -1241,7 +1348,7 @@ lvgl:
             state:
               checked: true
         - lvgl.widget.update:
-            id: [page_dot_energy, page_dot_heating]
+            id: [page_dot_energy, page_dot_heating, page_dot_light]
             state:
               checked: false
       widgets:
@@ -1327,6 +1434,208 @@ lvgl:
                   styles: value_medium_style
 
     # ---------------- Standby face (not part of the swipe/cycle order) ----------------
+    # ---------------- Color test (switch "Farbtest" in HA) ----------------
+    # ---------------- Light: desk lamp (on/off, brightness, colour temperature) ----------------
+    - id: light_page
+      scrollable: false
+      on_swipe_left:
+        - script.execute: show_next_page
+      on_swipe_right:
+        - script.execute: show_previous_page
+      # Like the other pages: tapping left/right flips pages (on the cards, not on the buttons)
+      on_click:
+        - script.execute: handle_page_tap
+      on_load:
+        - lvgl.widget.update:
+            id: page_dot_light
+            state:
+              checked: true
+        - lvgl.widget.update:
+            id: [page_dot_energy, page_dot_heating, page_dot_status]
+            state:
+              checked: false
+        - script.execute: desk_light_refresh
+      widgets:
+        # Header: name, state, round on/off button (blue when on)
+        - obj:
+            x: 6
+            y: 6
+            width: 308
+            height: 66
+            styles: card_style
+            scrollable: false
+            clickable: false
+            widgets:
+              - label: { x: 4, y: 0, text: "Schreibtisch", styles: caption_style }
+              - label: { id: desk_light_state_label, x: 4, y: 22, text: "--", styles: value_medium_style }
+        - button:
+            id: desk_light_power
+            x: 246
+            y: 13
+            width: 52
+            height: 52
+            radius: 26
+            bg_color: 0x262626
+            border_width: 0
+            shadow_width: 0
+            checked:
+              bg_color: 0x0A84FF
+            on_click:
+              - homeassistant.action:
+                  action: light.toggle
+                  data:
+                    entity_id: ${desk_light}
+            widgets:
+              - label: { align: CENTER, text: "\uF011", text_font: montserrat_24, text_color: 0xFFFFFF, clickable: false }
+        # Brightness: sent to HA on release
+        - obj:
+            x: 6
+            y: 78
+            width: 308
+            height: 66
+            styles: card_style
+            scrollable: false
+            clickable: false
+            widgets:
+              - label: { x: 4, y: 0, text: "Helligkeit", styles: caption_style }
+        - slider:
+            id: desk_light_slider
+            x: 22
+            y: 116
+            width: 276
+            height: 10
+            min_value: 1
+            max_value: 100
+            value: 50
+            bg_color: 0x262626
+            radius: 5
+            gesture_bubble: false
+            indicator:
+              bg_color: 0xFFFFFF
+            knob:
+              bg_color: 0xFFFFFF
+              pad_all: 6
+            on_release:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${desk_light}
+                    brightness_pct: !lambda return to_string((int) x);
+        # Colour temperature presets
+        - button:
+            id: desk_light_warm
+            x: 6
+            y: 150
+            width: 100
+            height: 66
+            bg_color: 0x000000
+            border_width: 1
+            border_color: 0x262626
+            radius: 10
+            shadow_width: 0
+            pad_all: 0
+            checkable: false
+            checked:
+              bg_color: 0x000000
+              border_width: 3
+              border_color: 0x0A84FF
+            pressed:
+              bg_color: 0x262626
+              bg_opa: COVER
+            on_click:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${desk_light}
+                    color_temp_kelvin: "2700"
+            widgets:
+              - obj: { align: TOP_MID, y: 10, width: 22, height: 22, radius: 11, bg_color: 0xFFB46B, bg_opa: COVER, border_width: 0, clickable: false }
+              - label: { align: BOTTOM_MID, y: -8, text: "Warm", styles: caption_style, clickable: false }
+        - button:
+            id: desk_light_neutral
+            x: 110
+            y: 150
+            width: 100
+            height: 66
+            bg_color: 0x000000
+            border_width: 1
+            border_color: 0x262626
+            radius: 10
+            shadow_width: 0
+            pad_all: 0
+            checkable: false
+            checked:
+              bg_color: 0x000000
+              border_width: 3
+              border_color: 0x0A84FF
+            pressed:
+              bg_color: 0x262626
+              bg_opa: COVER
+            on_click:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${desk_light}
+                    color_temp_kelvin: "4000"
+            widgets:
+              - obj: { align: TOP_MID, y: 10, width: 22, height: 22, radius: 11, bg_color: 0xFFE8CC, bg_opa: COVER, border_width: 0, clickable: false }
+              - label: { align: BOTTOM_MID, y: -8, text: "Neutral", styles: caption_style, clickable: false }
+        - button:
+            id: desk_light_cold
+            x: 214
+            y: 150
+            width: 100
+            height: 66
+            bg_color: 0x000000
+            border_width: 1
+            border_color: 0x262626
+            radius: 10
+            shadow_width: 0
+            pad_all: 0
+            checkable: false
+            checked:
+              bg_color: 0x000000
+              border_width: 3
+              border_color: 0x0A84FF
+            pressed:
+              bg_color: 0x262626
+              bg_opa: COVER
+            on_click:
+              - homeassistant.action:
+                  action: light.turn_on
+                  data:
+                    entity_id: ${desk_light}
+                    color_temp_kelvin: "6500"
+            widgets:
+              - obj: { align: TOP_MID, y: 10, width: 22, height: 22, radius: 11, bg_color: 0xD8E6FF, bg_opa: COVER, border_width: 0, clickable: false }
+              - label: { align: BOTTOM_MID, y: -8, text: "Kalt", styles: caption_style, clickable: false }
+
+    - id: test_page
+      skip: true
+      scrollable: false
+      widgets:
+        - obj: { x: 4, y: 8, width: 48, height: 80, bg_color: 0xFF0000, bg_opa: COVER, border_width: 0, radius: 0, clickable: false }
+        - label: { x: 4, y: 92, width: 48, text: "Rot", text_font: font_caption, text_align: CENTER }
+        - obj: { x: 56, y: 8, width: 48, height: 80, bg_color: 0x00FF00, bg_opa: COVER, border_width: 0, radius: 0, clickable: false }
+        - label: { x: 56, y: 92, width: 48, text: "Grün", text_font: font_caption, text_align: CENTER }
+        - obj: { x: 108, y: 8, width: 48, height: 80, bg_color: 0x0000FF, bg_opa: COVER, border_width: 0, radius: 0, clickable: false }
+        - label: { x: 108, y: 92, width: 48, text: "Blau", text_font: font_caption, text_align: CENTER }
+        - obj: { x: 160, y: 8, width: 48, height: 80, bg_color: 0xFFFF00, bg_opa: COVER, border_width: 0, radius: 0, clickable: false }
+        - label: { x: 160, y: 92, width: 48, text: "Gelb", text_font: font_caption, text_align: CENTER }
+        - obj: { x: 212, y: 8, width: 48, height: 80, bg_color: 0x00FFFF, bg_opa: COVER, border_width: 0, radius: 0, clickable: false }
+        - label: { x: 212, y: 92, width: 48, text: "Cyan", text_font: font_caption, text_align: CENTER }
+        - obj: { x: 264, y: 8, width: 48, height: 80, bg_color: 0xFF00FF, bg_opa: COVER, border_width: 0, radius: 0, clickable: false }
+        - label: { x: 264, y: 92, width: 48, text: "Magenta", text_font: font_caption, text_align: CENTER }
+        - obj: { x: 4, y: 124, width: 36, height: 80, bg_color: 0x000000, bg_opa: COVER, border_width: 1, border_color: 0xFFFFFF, radius: 0, clickable: false }
+        - obj: { x: 43, y: 124, width: 36, height: 80, bg_color: 0x242424, bg_opa: COVER, border_width: 1, border_color: 0xFFFFFF, radius: 0, clickable: false }
+        - obj: { x: 82, y: 124, width: 36, height: 80, bg_color: 0x494949, bg_opa: COVER, border_width: 1, border_color: 0xFFFFFF, radius: 0, clickable: false }
+        - obj: { x: 121, y: 124, width: 36, height: 80, bg_color: 0x6D6D6D, bg_opa: COVER, border_width: 1, border_color: 0xFFFFFF, radius: 0, clickable: false }
+        - obj: { x: 160, y: 124, width: 36, height: 80, bg_color: 0x929292, bg_opa: COVER, border_width: 1, border_color: 0xFFFFFF, radius: 0, clickable: false }
+        - obj: { x: 199, y: 124, width: 36, height: 80, bg_color: 0xB6B6B6, bg_opa: COVER, border_width: 1, border_color: 0xFFFFFF, radius: 0, clickable: false }
+        - obj: { x: 238, y: 124, width: 36, height: 80, bg_color: 0xDBDBDB, bg_opa: COVER, border_width: 1, border_color: 0xFFFFFF, radius: 0, clickable: false }
+        - obj: { x: 277, y: 124, width: 36, height: 80, bg_color: 0xFFFFFF, bg_opa: COVER, border_width: 1, border_color: 0xFFFFFF, radius: 0, clickable: false }
+        - label: { x: 4, y: 210, width: 312, text: "Graustufen 0 % bis 100 %", text_font: font_caption, text_align: CENTER }
+
     - id: face_page
       skip: true
       scrollable: false
@@ -1335,13 +1644,13 @@ lvgl:
             id(face_visible) = true;
             id(face_mood) = -1;  // force the mood to be applied again
         - lvgl.widget.update:
-            id: [page_dot_energy, page_dot_heating, page_dot_status]
+            id: [page_dot_energy, page_dot_heating, page_dot_status, page_dot_light]
             hidden: true
         - script.execute: update_face_mood
       on_unload:
         - lambda: "id(face_visible) = false;"
         - lvgl.widget.update:
-            id: [page_dot_energy, page_dot_heating, page_dot_status]
+            id: [page_dot_energy, page_dot_heating, page_dot_status, page_dot_light]
             hidden: false
       on_click:
         - lvgl.page.show: energy_page
@@ -1388,38 +1697,42 @@ lvgl:
                   styles: lid_style
                   clickable: false
                   hidden: true
-              # Slanted lids: an 80 px thick line shifted up by 40 px, so only its lower
-              # edge reaches into the eye and everything above it is covered
+              # Slanted lids: an 80 px thick line centred over the 85 px eye (x -23 .. 107) so both
+              # eyes mirror each other; cut about 5 px at the shallow end to 31 px, pupil stays clear
               - line:
                   id: angry_lid_left
-                  x: -10
-                  y: -40
+                  x: -23
+                  y: -42
                   points:
                     - 0, 0
                     - 130, 40
                   line_width: 80
+                  # Round ends: a square-cut end left one eye corner uncovered
+                  line_rounded: true
                   line_color: 0x000000
                   clickable: false
                   hidden: true
               - line:
                   id: sad_lid_left
-                  x: -10
-                  y: -40
+                  x: -23
+                  y: -42
                   points:
                     - 0, 40
                     - 130, 0
                   line_width: 80
+                  # Round ends: a square-cut end left one eye corner uncovered
+                  line_rounded: true
                   line_color: 0x000000
                   clickable: false
                   hidden: true
-              # Happy: big circle below the eye cuts it into an arc
+              # Happy: a 120 px "cheek" circle cuts 20 px out of the eye bottom
               - obj:
                   id: cheek_lid_left
-                  align: BOTTOM_MID
-                  y: 92
-                  width: 154
-                  height: 154
-                  radius: 77
+                  align: TOP_MID
+                  y: 64
+                  width: 120
+                  height: 120
+                  radius: 60
                   styles: lid_style
                   clickable: false
                   hidden: true
@@ -1475,34 +1788,38 @@ lvgl:
               # Slanted lids: see left eye
               - line:
                   id: angry_lid_right
-                  x: -10
-                  y: -40
+                  x: -23
+                  y: -42
                   points:
                     - 0, 40
                     - 130, 0
                   line_width: 80
+                  # Round ends: a square-cut end left one eye corner uncovered
+                  line_rounded: true
                   line_color: 0x000000
                   clickable: false
                   hidden: true
               - line:
                   id: sad_lid_right
-                  x: -10
-                  y: -40
+                  x: -23
+                  y: -42
                   points:
                     - 0, 0
                     - 130, 40
                   line_width: 80
+                  # Round ends: a square-cut end left one eye corner uncovered
+                  line_rounded: true
                   line_color: 0x000000
                   clickable: false
                   hidden: true
               # Happy: big circle below the eye cuts it into an arc
               - obj:
                   id: cheek_lid_right
-                  align: BOTTOM_MID
-                  y: 92
-                  width: 154
-                  height: 154
-                  radius: 77
+                  align: TOP_MID
+                  y: 64
+                  width: 120
+                  height: 120
+                  radius: 60
                   styles: lid_style
                   clickable: false
                   hidden: true
@@ -1514,6 +1831,30 @@ lvgl:
                   styles: lid_style
                   clickable: false
                   hidden: true
+        # Happy: smile (lower part of a circle, thin stroke with round ends)
+        - arc:
+            id: face_mouth
+            align: CENTER
+            x: 0
+            y: 36
+            width: 68
+            height: 68
+            start_angle: 35
+            end_angle: 145
+            adjustable: false
+            clickable: false
+            hidden: true
+            arc_color: ${eye_color}
+            arc_width: 7
+            arc_rounded: true
+            bg_opa: TRANSP
+            border_width: 0
+            pad_all: 0
+            indicator:
+              arc_opa: TRANSP
+            knob:
+              bg_opa: TRANSP
+              pad_all: 0
         - label:
             id: face_zzz
             align: TOP_RIGHT

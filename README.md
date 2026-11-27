@@ -22,7 +22,8 @@ A parametric OpenSCAD case for both lives in [`case/`](case/).
 ## Desk Buddy
 
 Swipeable pages for energy (battery, PV, house, grid), heating (indoor, outdoor, flow
-temperature, hot water, heat pump) and status (clock, robot vacuum, wallbox). After 30 s
+temperature, hot water, heat pump), status (clock, robot vacuum, wallbox) and a desk lamp
+(on/off, brightness, colour temperature; set `desk_light` in `substitutions:`). After 30 s
 without touch it cycles through the pages; the BOOT button toggles the standby face.
 
 - All Home Assistant entities are in the `sensor:` / `text_sensor:` / `binary_sensor:` blocks

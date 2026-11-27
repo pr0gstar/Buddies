@@ -1,19 +1,19 @@
 # Musicbuddy: ESPHome config for the ESP32-2432S024R "Cheap Yellow Display"
 # Kid-friendly Sonos/Spotify remote via Home Assistant.
-# Adjust the placeholders (entities, favourites, volume) before flashing.
+# Replace the example entities, links and covers with your own before flashing.
 #
 # Requirements in Home Assistant:
 #  - Sonos integration, speaker as media_player (e.g. media_player.kids_room)
 #  - Spotify linked in the Sonos app, playlists saved as Sonos favourites
 #    (the favourites show up as "source" of the media_player)
 #  - Device options of the buddy in HA: "Allow the device to perform Home Assistant actions" on
-#  - Volume limit is set in the Sonos app, the speaker caps it itself
+#  - Set the volume limit in the Sonos app, the speaker enforces it
 # Secrets (ESPHome secrets.yaml): musicbuddy_api_key, wifi_ssid, wifi_password,
 # musicbuddy_fallback_password
 
 substitutions:
   # Target speaker: selectable in HA on the device (select "Sonos-Box"), default is box 1.
-  # Replace the entity IDs with your own.
+  # Check the entity IDs in HA.
   box1_name: "Kids room"
   box1_entity: media_player.kids_room
   box2_name: "Kitchen"
@@ -24,38 +24,43 @@ substitutions:
   box4_entity: media_player.office
   box5_name: "Roam"
   box5_entity: media_player.sonos_roam_sl
-  # Address of HA in your network (currently unused, the track cover is too big for the RAM)
+  # Address of HA on the home network (currently unused, the track cover is too big for the RAM)
   ha_url: "http://homeassistant.local:8123"
-  # Volume 0.0–1.0 per tap (the speaker sets the upper limit itself)
+  # Volume 0.0-1.0 per tap (the speaker sets the upper limit)
   volume_step: "0.05"
   # Tiles: name, Spotify link (Share -> Copy link) and cover image.
-  # Cover URL: open https://open.spotify.com/oembed?url=<link> in a browser, copy "thumbnail_url".
-  # New tile: add three lines here, one entry under image: and one tile on the page.
-  music1: "All songs"
+  # Cover: a local file (like the placeholder) or a URL. Spotify cover URL: open
+  # https://open.spotify.com/oembed?url=<link> in a browser, copy "thumbnail_url".
+  # New music tile: add three lines here, one entry under image: and a tile on the page.
+  music1: "Playlist"
   music1_url: "https://open.spotify.com/playlist/YOUR_PLAYLIST_ID"
-  music1_cover: "https://image-cdn-ak.spotifycdn.com/image/ab67706c0000da8466b2cf97243b4ff738d370fc"
-  music2: "Party Songs"
-  music2_url: "https://open.spotify.com/album/2gmIZEtKxXvdDib0MJ3Elk"
-  music2_cover: "https://image-cdn-ak.spotifycdn.com/image/ab67616d00001e02e93b4be0c8020eb62c055ebb"
-  story1: "Film 1"
-  story1_url: "https://open.spotify.com/playlist/YOUR_PLAYLIST_ID"
-  story1_cover: "https://i.scdn.co/image/ab67616d00001e02ce87c558a9e71c452270772d"
-  story2: "Film 2"
-  story2_url: "https://open.spotify.com/album/57SIUrP27UFwFxKKWXEmuJ"
-  story2_cover: "https://image-cdn-ak.spotifycdn.com/image/ab67616d00001e02e53507e6cb0121935c1ad2f0"
-  story3: "Film 3"
-  story3_url: "https://open.spotify.com/album/7bB2Qm2ldjkV4UCgZSx6Id"
-  story3_cover: "https://image-cdn-fa.spotifycdn.com/image/ab67616d00001e02192b4e780efd8d40c9a24899"
-  story4: "Film 4"
-  story4_url: "https://open.spotify.com/album/1hhNtSsFWuqeNsV1gXiiQV"
-  story4_cover: "https://image-cdn-ak.spotifycdn.com/image/ab67616d00001e024f6e2711cbb20dbd86ab5b22"
-  # Brightness: 80 % while in use, eyes at 50 % after idle_timeout,
-  # display off after off_timeout (since the last touch). A tap wakes it to the player.
-  active_brightness: "80%"
+  music1_cover: "images/cover-placeholder.png"
+  music2: "Album"
+  music2_url: "https://open.spotify.com/album/YOUR_ALBUM_ID"
+  music2_cover: "images/cover-placeholder.png"
+  # Audio stories: one tile per series (cover in flash). The episodes of each series are
+  # in the script "series_fill" (album ID|cover) and load their cover only when opened.
+  # Series names for the header are in the "names" list next to series_fill.
+  series1_cover: "images/cover-placeholder.png"
+  series2_cover: "images/cover-placeholder.png"
+  series3_cover: "images/cover-placeholder.png"
+  series4_cover: "images/cover-placeholder.png"
+  series5_cover: "images/cover-placeholder.png"
+  series6_cover: "images/cover-placeholder.png"
+  series7_cover: "images/cover-placeholder.png"
+  series8_cover: "images/cover-placeholder.png"
+  series9_cover: "images/cover-placeholder.png"
+  series10_cover: "images/cover-placeholder.png"
+  # Brightness: 80 % in use, after idle_timeout eyes at 50 % (both times the light sensor factor),
+  # after off_timeout (since the last touch) display off. A tap wakes it to the player.
+  active_brightness: "0.8"
   idle_timeout: 60s
-  idle_brightness: "50%"
+  idle_brightness: "0.5"
   off_timeout: 5min
-  # Eyes from the Desk Buddy (reference robot, scaled by about 2.5)
+  # Power off (deep sleep) after this long without touch, but never
+  # while the speaker plays. On battery: back on with SW1. On USB: a tap wakes it.
+  sleep_timeout: 10min
+  # Eyes from the Desk Buddy (reference robot, scaled about x2.5)
   eye_color: "0xFFFFFF"
   eye_size: "90"
   eye_radius: "20"
@@ -71,21 +76,50 @@ substitutions:
   # Moods: playing = happy, paused = neutral, idle/off = sleepy
   mood_neutral: "0"
   mood_happy: "1"
+  mood_angry: "2"
   mood_sleepy: "3"
-  glyphs_text: " !\"#&'()*+,-./0123456789:;?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[]_abcdefghijklmnopqrstuvwxyzÄÖÜäöüßéèáàñçøå’–"
+  mood_sad: "4"
+  mood_surprised: "5"
+  glyphs_text: " !\"#%&'()*+,-./0123456789:;?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[]_abcdefghijklmnopqrstuvwxyzÄÖÜäöüßéèáàñçøå’–"
 
 esphome:
   name: musicbuddy-001
   friendly_name: Musicbuddy 001
   on_boot:
-    - light.turn_on:
-        id: display_backlight
-        brightness: ${active_brightness}
+    priority: -100
+    then:
+      - if:
+          condition:
+            switch.is_on: lock_switch
+          then:
+            - lvgl.widget.show: lock_overlay
+            - lvgl.page.show: face_page
+            - light.turn_on:
+                id: display_backlight
+                brightness: !lambda return ${idle_brightness} * id(ambient_factor);
+          else:
+            - light.turn_on:
+                id: display_backlight
+                brightness: !lambda return ${active_brightness} * id(ambient_factor);
 
 esp32:
   variant: esp32
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      # Allocate TLS buffers only while a connection is open (saves RAM for the covers)
+      # (not DYNAMIC_FREE_CA_CERT/CONFIG_DATA on purpose: they free the certificate after the
+      #  first handshake, the second connection then fails -> crash)
+      CONFIG_MBEDTLS_DYNAMIC_BUFFER: y
+    advanced:
+      # Recommended by the ESPHome log: smaller firmware, more IRAM
+      minimum_chip_revision: "3.1"
+      sram1_as_iram: true
+      flash_chip: generic
 
 logger:
+  # INFO instead of DEBUG: debug messages are dropped at compile time, saves flash
+  level: INFO
 
 api:
   encryption:
@@ -115,6 +149,10 @@ spi:
 
 output:
   - { platform: ledc, pin: GPIO27, id: backlight_pwm }
+  # RGB LED on the back (active low): stays off
+  - { platform: gpio, pin: GPIO4, id: led_r, inverted: true }
+  - { platform: gpio, pin: GPIO16, id: led_g, inverted: true }
+  - { platform: gpio, pin: GPIO17, id: led_b, inverted: true }
 
 light:
   - platform: monochromatic
@@ -132,13 +170,20 @@ display:
     cs_pin: { number: GPIO15, ignore_strapping_warning: true }
     dc_pin: { number: GPIO2, ignore_strapping_warning: true }
     invert_colors: false
-    # This board needs BGR (model default): with rgb, red and blue were swapped
-    color_order: bgr
+    # Colour test: with bgr, red/blue and yellow/cyan were swapped -> rgb (like the Desk Buddy)
+    color_order: rgb
     auto_clear_enabled: false
     update_interval: never
     dimensions:
       width: 320
       height: 240
+    # Gamma: with the ILI9342 default curve the colour test showed a broken grey ramp
+    # (dark greys too bright, mid grey brighter than light grey). So this uses the curve ESPHome
+    # ships for the CYD board with ILI9342 (model "ESP32-2432S028-9342"). If it looks worse: delete the block.
+    init_sequence:
+      - [0x26, 0x01]
+      - [0xE0, 0x00, 0x0C, 0x11, 0x04, 0x11, 0x08, 0x37, 0x89, 0x4C, 0x06, 0x0C, 0x0A, 0x2E, 0x34, 0x0F]
+      - [0xE1, 0x00, 0x0B, 0x11, 0x05, 0x13, 0x09, 0x33, 0x67, 0x48, 0x07, 0x0E, 0x0B, 0x23, 0x33, 0x0F]
     transform:
       swap_xy: false
       mirror_x: false
@@ -149,33 +194,43 @@ touchscreen:
     id: main_touch
     spi_id: spi_bus
     cs_pin: GPIO33
-    interrupt_pin: GPIO36
+    interrupt_pin: { number: GPIO36, allow_other_uses: true }
     calibration:
       x_min: 225
       x_max: 3835
       y_min: 290
       y_max: 3885
     on_touch:
-      - light.turn_on:
-          id: display_backlight
-          brightness: ${active_brightness}
+      - if:
+          condition:
+            switch.is_off: lock_switch
+          then:
+            - light.turn_on:
+                id: display_backlight
+                brightness: !lambda return ${active_brightness} * id(ambient_factor);
 
 font:
-  - file: "gfonts://Roboto@700"
+  # Inter: closest to Apple's SF font and freely available
+  - file: "gfonts://Inter@600"
     id: font_title
     size: 20
     glyphs: ${glyphs_text}
-  - file: "gfonts://Roboto@500"
+  - file: "gfonts://Inter@400"
     id: font_small
     size: 15
     glyphs: ${glyphs_text}
-  - file: "gfonts://Roboto@700"
-    id: font_tile
-    size: 17
+  - file: "gfonts://Inter@500"
+    id: font_label
+    size: 15
     glyphs: ${glyphs_text}
+  # Episode numbers while the cover is still loading
+  - file: "gfonts://Inter@600"
+    id: font_num
+    size: 40
+    glyphs: "0123456789"
 
 # Covers: keep them small, the CYD has no PSRAM
-# Tile covers are downloaded from Spotify at compile time and stored in flash
+# Tile covers: downloaded from Spotify at compile time and stored in flash
 image:
   - platform: file
     file: "${music1_cover}"
@@ -188,30 +243,232 @@ image:
     type: RGB565
     resize: 90x90
   - platform: file
-    file: "${story1_cover}"
-    id: img_story1
+    file: "${series1_cover}"
+    id: img_series1
     type: RGB565
     resize: 90x90
   - platform: file
-    file: "${story2_cover}"
-    id: img_story2
+    file: "${series2_cover}"
+    id: img_series2
     type: RGB565
     resize: 90x90
   - platform: file
-    file: "${story3_cover}"
-    id: img_story3
+    file: "${series3_cover}"
+    id: img_series3
     type: RGB565
     resize: 90x90
   - platform: file
-    file: "${story4_cover}"
-    id: img_story4
+    file: "${series4_cover}"
+    id: img_series4
     type: RGB565
     resize: 90x90
+  - platform: file
+    file: "${series5_cover}"
+    id: img_series5
+    type: RGB565
+    resize: 90x90
+  - platform: file
+    file: "${series6_cover}"
+    id: img_series6
+    type: RGB565
+    resize: 90x90
+  - platform: file
+    file: "${series7_cover}"
+    id: img_series7
+    type: RGB565
+    resize: 90x90
+  - platform: file
+    file: "${series8_cover}"
+    id: img_series8
+    type: RGB565
+    resize: 90x90
+  - platform: file
+    file: "${series9_cover}"
+    id: img_series9
+    type: RGB565
+    resize: 90x90
+  - platform: file
+    file: "${series10_cover}"
+    id: img_series10
+    type: RGB565
+    resize: 90x90
+  # The same covers in tile size (64 px, like the episode covers)
+  - platform: file
+    file: "${music1_cover}"
+    id: img_music1_t
+    type: RGB565
+    resize: 64x64
+  - platform: file
+    file: "${music2_cover}"
+    id: img_music2_t
+    type: RGB565
+    resize: 64x64
+  - platform: file
+    file: "${series1_cover}"
+    id: img_series1_t
+    type: RGB565
+    resize: 64x64
+  - platform: file
+    file: "${series2_cover}"
+    id: img_series2_t
+    type: RGB565
+    resize: 64x64
+  - platform: file
+    file: "${series3_cover}"
+    id: img_series3_t
+    type: RGB565
+    resize: 64x64
+  - platform: file
+    file: "${series4_cover}"
+    id: img_series4_t
+    type: RGB565
+    resize: 64x64
+  - platform: file
+    file: "${series5_cover}"
+    id: img_series5_t
+    type: RGB565
+    resize: 64x64
+  - platform: file
+    file: "${series6_cover}"
+    id: img_series6_t
+    type: RGB565
+    resize: 64x64
+  - platform: file
+    file: "${series7_cover}"
+    id: img_series7_t
+    type: RGB565
+    resize: 64x64
+  - platform: file
+    file: "${series8_cover}"
+    id: img_series8_t
+    type: RGB565
+    resize: 64x64
+  - platform: file
+    file: "${series9_cover}"
+    id: img_series9_t
+    type: RGB565
+    resize: 64x64
+  - platform: file
+    file: "${series10_cover}"
+    id: img_series10_t
+    type: RGB565
+    resize: 64x64
+  # Episode covers: 6 slots, loaded one after another from the network when a page opens
+  # (64 px from Spotify, a few KB per image, one at a time because of the RAM)
+  - platform: file
+    file: mdi:ear-hearing
+    id: img_ph
+    type: RGB565
+    resize: 64x64
+  - platform: online_image
+    id: ci0  # the only download slot for all episode covers
+    url: "http://i.scdn.co/image/YOUR_COVER_ID"
+    format: JPEG
+    type: RGB565
+    resize: 64x64
+    buffer_size: 5120
+    placeholder: img_ph
+    on_download_finished:
+      - lambda: |-
+          int i = id(load_idx);
+          ESP_LOGI("cover", "Cover %d fertig nach %u ms", i, (unsigned) (millis() - id(load_started)));
+          // Page changed meanwhile: the image belongs to the old page, don't show it
+          if (id(load_restart) || i < 0 || i >= 6) return;
+          // Copy the image descriptor (points to this slot's fixed buffer)
+          id(cover_dscs)[i] = *id(ci0)->get_lv_image_dsc();
+          lv_obj_t *imgs[] = {id(cimg0), id(cimg1), id(cimg2), id(cimg3), id(cimg4), id(cimg5)};
+          lv_obj_t *labs[] = {id(clab0), id(clab1), id(clab2), id(clab3), id(clab4), id(clab5)};
+          lv_image_set_src(imgs[i], &id(cover_dscs)[i]);
+          lv_obj_remove_flag(imgs[i], LV_OBJ_FLAG_HIDDEN);
+          lv_obj_add_flag(labs[i], LV_OBJ_FLAG_HIDDEN);
+          lv_obj_invalidate(imgs[i]);
+      - script.execute: { id: slot_done, slot: 0 }
+    on_error:
+      - lambda: ESP_LOGW("cover", "Cover %d Fehler nach %u ms", id(load_idx), (unsigned) (millis() - id(load_started)));
+      - script.execute: { id: slot_failed, slot: 0 }
+  # Lock icon for the lock mode
+  - platform: file
+    file: mdi:lock
+    id: icon_lock
+    type: GRAYSCALE
+    transparency: alpha_channel
+    resize: 28x28
+  # Ear icon for the "Hörspiele" (audio stories) tile
+  - platform: file
+    file: mdi:ear-hearing
+    id: icon_ear
+    type: GRAYSCALE
+    transparency: alpha_channel
+    resize: 36x36
+  # Note icon made like the ear (MDI image, tinted white) so both tiles look the same
+  - platform: file
+    file: mdi:music-note
+    id: icon_music
+    type: GRAYSCALE
+    transparency: alpha_channel
+    resize: 36x36
+
+# For the episode covers (HTTPS to the Spotify CDN)
+http_request:
+  timeout: 10s
+
+# Power off: deep sleep without time limit, wake-up via touch IRQ (XPT2046 pulls GPIO36 low)
+deep_sleep:
+  id: deep_sleep_ctrl
+  wakeup_pin:
+    number: GPIO36
+    inverted: true
+    allow_other_uses: true
 
 # ---------------------------------------------------------------------------
 # State
 # ---------------------------------------------------------------------------
 globals:
+  # Fixed image buffers for the 6 episode covers (64x64 RGB565) and their LVGL descriptors
+  - id: cover_bufs
+    type: std::array<std::array<uint8_t, 8192>, 6>
+  - id: cover_dscs
+    type: std::array<lv_image_dsc_t, 6>
+  # Light sensor factor for the brightness: 1.0 = bright, smaller = dark room
+  - id: ambient_factor
+    type: float
+    initial_value: '1.0'
+  # A cover was picked via a tile (the player shows it while the speaker plays/pauses)
+  - id: cover_known
+    type: bool
+  - id: load_started
+    type: uint32_t
+  - id: loaded_series
+    type: int
+    initial_value: "-1"
+  - id: loaded_page
+    type: int
+    initial_value: "-1"
+  # Audio story series: index into the tiles of the series page (0-9)
+  - id: cur_series
+    type: int
+  - id: cur_page
+    type: int
+  # Page of the series overview: 0 = series 1-6, 1 = series 7-10
+  - id: story_pg
+    type: int
+  - id: page_count
+    type: int
+  - id: series_total
+    type: int
+  - id: load_idx
+    type: int
+  - id: loading
+    type: bool
+  - id: load_restart
+    type: bool
+  - id: load_retries
+    type: int
+    initial_value: '0'
+  - id: page_album
+    type: std::vector<std::string>
+  - id: page_cover
+    type: std::vector<std::string>
   - id: face_visible
     type: bool
     initial_value: "false"
@@ -239,7 +496,76 @@ globals:
   - id: cur_artist
     type: std::string
 
+# Show the eyes right away (for testing), like after idle_timeout without touch
+button:
+  - platform: template
+    name: Augen zeigen
+    icon: mdi:eye
+    on_press:
+      - lvgl.page.show: face_page
+      - light.turn_on:
+          id: display_backlight
+          brightness: !lambda return ${idle_brightness} * id(ambient_factor);
+
+# Colour test: turn on in HA, shows pure colours and a grey ramp
+switch:
+  # Adapt the brightness to the ambient light automatically (light sensor GPIO34)
+  - platform: template
+    id: auto_brightness
+    name: Auto-Helligkeit
+    icon: mdi:brightness-auto
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    entity_category: config
+    turn_off_action:
+      - lambda: id(ambient_factor) = 1.0f;
+  # Lock: the buddy only shows the eyes and ignores touch.
+  # Survives a restart/deep sleep.
+  - platform: template
+    id: lock_switch
+    name: Sperre
+    icon: mdi:lock
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    turn_on_action:
+      - lvgl.widget.show: lock_overlay
+      - lvgl.page.show: face_page
+      - light.turn_on:
+          id: display_backlight
+          brightness: !lambda return ${idle_brightness} * id(ambient_factor);
+    turn_off_action:
+      - lvgl.widget.hide: lock_overlay
+      - lvgl.page.show: player_page
+      - light.turn_on:
+          id: display_backlight
+          brightness: !lambda return ${active_brightness} * id(ambient_factor);
+  - platform: template
+    id: color_test
+    name: Farbtest
+    icon: mdi:palette
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+    entity_category: config
+    turn_on_action:
+      - lvgl.page.show: test_page
+    turn_off_action:
+      - lvgl.page.show: player_page
+
 select:
+  # Pick the face by hand (like the Desk Buddy). "Auto" = mood from the speaker state.
+  - platform: template
+    id: face_mood_override
+    name: Gesicht
+    icon: mdi:emoticon-outline
+    options: ["Auto", "Neutral", "Happy", "Angry", "Sleepy", "Sad", "Surprised"]
+    initial_option: "Auto"
+    optimistic: true
+    restore_value: true
+    entity_category: config
+    on_value:
+      - lambda: "id(face_mood) = -1;"  # force a redraw
+      - lvgl.page.show: face_page
+      - script.execute: update_face_mood
   - platform: template
     id: box_select
     name: Sonos-Box
@@ -257,7 +583,31 @@ select:
       - script.execute: refresh_ui
 
 interval:
-  # Eye animation like the Desk Buddy: blink about every 4 s, a suspicious look now and then, wandering gaze
+  # Cover stuck for more than 8 s: cancel and continue with the next one
+  - interval: 1s
+    then:
+      - if:
+          condition:
+            lambda: return id(loading) && millis() - id(load_started) > 8000;
+          then:
+            - lambda: ESP_LOGW("cover", "Cover %d hängt, übersprungen", id(load_idx));
+            - online_image.release: ci0
+            - script.execute: { id: slot_done, slot: -1 }
+  # Power off after sleep_timeout without touch, as long as the speaker is not playing
+  - interval: 60s
+    then:
+      - if:
+          condition:
+            and:
+              - lvgl.is_idle:
+                  timeout: ${sleep_timeout}
+              - lambda: 'return id(cur_state) != "playing";'
+          then:
+            - light.turn_off:
+                id: display_backlight
+                transition_length: 0s
+            - deep_sleep.enter: deep_sleep_ctrl
+  # Eye animation like the Desk Buddy: blink about every 4 s, now and then suspicious, gaze wanders
   - interval: 1s
     then:
       - if:
@@ -285,7 +635,23 @@ interval:
             - script.execute: face_glance
 
 script:
-  # Change volume by delta, always clamped to [0, upper limit]
+  # Series overview: 6 series per page, next button only on page 1
+  - id: story_show
+    then:
+      - lvgl.widget.update:
+          id: [stile0, stile1, stile2, stile3, stile4, stile5]
+          hidden: !lambda return id(story_pg) != 0;
+      - lvgl.widget.update:
+          id: [stile6, stile7, stile8, stile9]
+          hidden: !lambda return id(story_pg) != 1;
+      - lvgl.widget.update:
+          id: snext
+          hidden: !lambda return id(story_pg) != 0;
+      - lvgl.label.update:
+          id: story_page_label
+          text: !lambda |-
+            return std::string(id(story_pg) == 0 ? "1/2" : "2/2");
+  # Change the volume by delta, always clamped to [0, upper limit]
   - id: change_volume
     parameters:
       delta: float
@@ -316,11 +682,332 @@ script:
           variables:
             target: !lambda return id(target);
 
-  # Plays a Spotify link on the selected speaker (replaces the queue)
+  # Restart the current queue (playlist/album) at the first track
+  - id: restart_queue
+    then:
+      - homeassistant.action:
+          action: sonos.play_queue
+          data:
+            queue_position: "0"
+          data_template:
+            entity_id: "{{ target }}"
+          variables:
+            target: !lambda return id(target);
+
+  # Open the episodes of a series (page 1)
+  - id: series_open
+    parameters:
+      series: int
+    then:
+      - lambda: |-
+          // Reopening the same series: stay on the last page
+          if (id(cur_series) != series) id(cur_page) = 0;
+          id(cur_series) = series;
+      - lvgl.page.show: series_page
+      # Page already loaded (back from the player): keep the covers, load nothing
+      - if:
+          condition:
+            lambda: return !(id(cur_series) == id(loaded_series) && id(cur_page) == id(loaded_page) && !id(loading));
+          then:
+            - script.execute: series_fill
+
+  # Fill the current page (6 episodes) and start loading the covers.
+  # Episodes: "album ID|cover", cover = host (f/a) + Spotify image ID, sorted from 1 to X.
+  - id: series_fill
+    then:
+      - lambda: |-
+          // Episodes per series, one line each: Spotify album ID, "|", then the
+          // cover image ID (first letter = CDN host f/a, rest = image ID). Order = episode order.
+          static const char *const s0[] = {
+              "YOUR_ALBUM_ID|fYOUR_COVER_ID"
+          };
+          static const char *const s1[] = {
+              "YOUR_ALBUM_ID|fYOUR_COVER_ID"
+          };
+          static const char *const s2[] = {
+              "YOUR_ALBUM_ID|fYOUR_COVER_ID"
+          };
+          static const char *const s3[] = {
+              "YOUR_ALBUM_ID|fYOUR_COVER_ID"
+          };
+          static const char *const s4[] = {
+              "YOUR_ALBUM_ID|fYOUR_COVER_ID"
+          };
+          static const char *const s5[] = {
+              "YOUR_ALBUM_ID|fYOUR_COVER_ID"
+          };
+          static const char *const s6[] = {
+              "YOUR_ALBUM_ID|fYOUR_COVER_ID"
+          };
+          static const char *const s7[] = {
+              "YOUR_ALBUM_ID|fYOUR_COVER_ID"
+          };
+          static const char *const s8[] = {
+              "YOUR_ALBUM_ID|fYOUR_COVER_ID"
+          };
+          static const char *const s9[] = {
+              "YOUR_ALBUM_ID|fYOUR_COVER_ID"
+          };
+          // Lists live as const char* in flash, not as std::string in RAM
+          struct SeriesList { const char *const *items; int count; };
+          #define SL(x) SeriesList{x, (int) (sizeof(x) / sizeof(x[0]))}
+          static const SeriesList all[] = {SL(s0), SL(s1), SL(s2), SL(s3), SL(s4), SL(s5), SL(s6), SL(s7), SL(s8), SL(s9)};
+          #undef SL
+          const SeriesList &list = all[id(cur_series)];
+          id(series_total) = list.count;
+          id(page_album).assign(6, "");
+          id(page_cover).assign(6, "");
+          int start = id(cur_page) * 6;
+          int n = 0;
+          for (int i = start; i < list.count && n < 6; i++, n++) {
+            const std::string e = list.items[i];
+            size_t bar = e.find('|');
+            id(page_album)[n] = "https://open.spotify.com/album/" + e.substr(0, bar);
+            std::string c = e.substr(bar + 1);
+            // Unencrypted via i.scdn.co: saves TLS (~40 KB RAM) and handshake time.
+            // If Spotify redirects to https, http_request follows the redirect.
+            id(page_cover)[n] = std::string("http://i.scdn.co/image/ab67616d00004851") + c.substr(1);
+          }
+          id(page_count) = n;
+      - lvgl.widget.hide: cimg0
+      - lvgl.label.update:
+          id: clab0
+          text: !lambda return to_string(id(cur_page) * 6 + 0 + 1);
+      - if:
+          condition:
+            lambda: return 0 < id(page_count);
+          then:
+            - lvgl.widget.show: ctile0
+          else:
+            - lvgl.widget.hide: ctile0
+      - lvgl.widget.hide: cimg1
+      - lvgl.label.update:
+          id: clab1
+          text: !lambda return to_string(id(cur_page) * 6 + 1 + 1);
+      - if:
+          condition:
+            lambda: return 1 < id(page_count);
+          then:
+            - lvgl.widget.show: ctile1
+          else:
+            - lvgl.widget.hide: ctile1
+      - lvgl.widget.hide: cimg2
+      - lvgl.label.update:
+          id: clab2
+          text: !lambda return to_string(id(cur_page) * 6 + 2 + 1);
+      - if:
+          condition:
+            lambda: return 2 < id(page_count);
+          then:
+            - lvgl.widget.show: ctile2
+          else:
+            - lvgl.widget.hide: ctile2
+      - lvgl.widget.hide: cimg3
+      - lvgl.label.update:
+          id: clab3
+          text: !lambda return to_string(id(cur_page) * 6 + 3 + 1);
+      - if:
+          condition:
+            lambda: return 3 < id(page_count);
+          then:
+            - lvgl.widget.show: ctile3
+          else:
+            - lvgl.widget.hide: ctile3
+      - lvgl.widget.hide: cimg4
+      - lvgl.label.update:
+          id: clab4
+          text: !lambda return to_string(id(cur_page) * 6 + 4 + 1);
+      - if:
+          condition:
+            lambda: return 4 < id(page_count);
+          then:
+            - lvgl.widget.show: ctile4
+          else:
+            - lvgl.widget.hide: ctile4
+      - lvgl.widget.hide: cimg5
+      - lvgl.label.update:
+          id: clab5
+          text: !lambda return to_string(id(cur_page) * 6 + 5 + 1);
+      - if:
+          condition:
+            lambda: return 5 < id(page_count);
+          then:
+            - lvgl.widget.show: ctile5
+          else:
+            - lvgl.widget.hide: ctile5
+      - if:
+          condition:
+            lambda: return (id(cur_page) + 1) * 6 < id(series_total);
+          then:
+            - lvgl.widget.show: cnext
+          else:
+            - lvgl.widget.hide: cnext
+      - lvgl.label.update:
+          id: series_title
+          text: !lambda |-
+            static const char *const names[] = {"Series 1", "Series 2", "Series 3", "Series 4", "Series 5", "Series 6", "Series 7", "Series 8", "Series 9", "Series 10"};
+            return std::string(names[id(cur_series)]);
+      # Page number only if the series has more than one page
+      - lvgl.label.update:
+          id: page_label
+          text: !lambda |-
+            int pages = (id(series_total) + 5) / 6;
+            if (pages <= 1) return std::string("");
+            return to_string(id(cur_page) + 1) + "/" + to_string(pages);
+      - lambda: |-
+          id(load_idx) = 0;
+          if (id(loading)) id(load_restart) = true;
+      - if:
+          condition:
+            lambda: return !id(loading);
+          then:
+            - script.execute: load_next
+
+  # Load the next cover of the page (only one at a time)
+  - id: load_next
+    then:
+      - if:
+          condition:
+            lambda: return id(load_idx) < id(page_count);
+          then:
+            - lambda: |-
+                id(loading) = true;
+                id(load_started) = millis();
+                ESP_LOGI("cover", "Lade Cover %d (frei %u, Tiefstwert %u): %s", id(load_idx),
+                         (unsigned) esp_get_free_heap_size(), (unsigned) esp_get_minimum_free_heap_size(),
+                         id(page_cover)[id(load_idx)].c_str());
+            # One download decoder for all slots: it decodes straight into the
+            # fixed buffer of the slot (otherwise each slot would have its own ~18 KB decoder)
+            - lambda: id(ci0)->set_external_buffer(id(cover_bufs)[id(load_idx)].data(), 64, 64);
+            - online_image.set_url:
+                id: ci0
+                url: !lambda return id(page_cover)[id(load_idx)];
+          else:
+            - lambda: |-
+                id(loading) = false;
+                id(loaded_series) = id(cur_series);
+                id(loaded_page) = id(cur_page);
+
+  # A cover is done (or failed): load the next one
+  # Short pause so the previous TLS connection frees its memory
+  - id: slot_done
+    mode: queued
+    max_runs: 3
+    parameters:
+      slot: int
+    then:
+      - delay: 300ms
+      - lambda: |-
+          id(load_retries) = 0;
+          if (id(load_restart)) {
+            id(load_restart) = false;
+            id(load_idx) = 0;
+          } else {
+            id(load_idx)++;
+          }
+      - script.execute: load_next
+
+  # Download failed: retry up to 2 times after a short pause, then move on
+  - id: slot_failed
+    mode: queued
+    max_runs: 3
+    parameters:
+      slot: int
+    then:
+      - if:
+          condition:
+            lambda: return id(load_retries) < 2 && !id(load_restart);
+          then:
+            - lambda: id(load_retries)++;
+            - delay: 1500ms
+            - script.execute: load_next
+          else:
+            - script.execute: { id: slot_done, slot: !lambda return slot; }
+
+  # Play the episode in slot "slot", show the series cover in the player
+  - id: play_slot
+    parameters:
+      slot: int
+    then:
+      - script.execute:
+          id: play_spotify
+          url: !lambda return id(page_album)[slot];
+      - if:
+          condition:
+            lambda: return id(cur_series) == 0;
+          then:
+            - lvgl.image.update: { id: cover_widget, src: img_series1 }
+      - if:
+          condition:
+            lambda: return id(cur_series) == 1;
+          then:
+            - lvgl.image.update: { id: cover_widget, src: img_series2 }
+      - if:
+          condition:
+            lambda: return id(cur_series) == 2;
+          then:
+            - lvgl.image.update: { id: cover_widget, src: img_series3 }
+      - if:
+          condition:
+            lambda: return id(cur_series) == 3;
+          then:
+            - lvgl.image.update: { id: cover_widget, src: img_series4 }
+      - if:
+          condition:
+            lambda: return id(cur_series) == 4;
+          then:
+            - lvgl.image.update: { id: cover_widget, src: img_series5 }
+      - if:
+          condition:
+            lambda: return id(cur_series) == 5;
+          then:
+            - lvgl.image.update: { id: cover_widget, src: img_series6 }
+      - if:
+          condition:
+            lambda: return id(cur_series) == 6;
+          then:
+            - lvgl.image.update: { id: cover_widget, src: img_series7 }
+      - if:
+          condition:
+            lambda: return id(cur_series) == 7;
+          then:
+            - lvgl.image.update: { id: cover_widget, src: img_series8 }
+      - if:
+          condition:
+            lambda: return id(cur_series) == 8;
+          then:
+            - lvgl.image.update: { id: cover_widget, src: img_series9 }
+      - if:
+          condition:
+            lambda: return id(cur_series) == 9;
+          then:
+            - lvgl.image.update: { id: cover_widget, src: img_series10 }
+      - lvgl.widget.show: cover_widget
+      - lambda: id(cover_known) = true;
+
+  # Play a Spotify link on the selected speaker (replaces the queue).
+  # Repeat and shuffle off first: the album/playlist plays once from start to end
+  # and the speaker stops afterwards (Sonos queue, no autoplay).
   - id: play_spotify
     parameters:
       url: string
     then:
+      - homeassistant.action:
+          action: media_player.repeat_set
+          data:
+            repeat: "off"
+          data_template:
+            entity_id: "{{ target }}"
+          variables:
+            target: !lambda return id(target);
+      - homeassistant.action:
+          action: media_player.shuffle_set
+          data:
+            shuffle: "false"
+          data_template:
+            entity_id: "{{ target }}"
+          variables:
+            target: !lambda return id(target);
       - homeassistant.action:
           action: media_player.play_media
           data:
@@ -334,14 +1021,14 @@ script:
             url: !lambda return url;
       - lvgl.page.show: player_page
 
-  # Copies the data of the selected speaker into the UI
+  # Copy the data of the selected speaker into the display
   - id: refresh_ui
     mode: restart
     then:
       - lambda: |-
           size_t i = id(box_select).active_index().value_or(0);
           if (i > 4) i = 0;
-          // Pick the value of the selected speaker from the five fixed subscriptions
+          // Get the value of the selected speaker from the five fixed subscriptions
           auto pick = [i](const std::string &a, const std::string &b, const std::string &c,
                           const std::string &d, const std::string &e) -> std::string {
             const std::string *v[] = {&a, &b, &c, &d, &e};
@@ -366,11 +1053,14 @@ script:
       - lvgl.bar.update:
           id: volume_bar
           value: !lambda return (int) (id(volume) * 100.0f);
-      # Show the cover of the last started tile while the speaker is playing or paused
+      # Show the cover of the last started tile while the speaker plays or pauses
+      # (at start the speaker is briefly "idle"/"buffering": then only hide it, don't forget it)
       - if:
           condition:
-            lambda: return id(cur_state) != "playing" && id(cur_state) != "paused";
+            lambda: return id(cover_known) && (id(cur_state) == "playing" || id(cur_state) == "paused");
           then:
+            - lvgl.widget.show: cover_widget
+          else:
             - lvgl.widget.hide: cover_widget
 
   # --- Standby eyes (from the Desk Buddy) ---
@@ -380,6 +1070,12 @@ script:
           int mood = ${mood_neutral};
           if (id(cur_state) == "playing") mood = ${mood_happy};
           else if (id(cur_state) != "paused") mood = ${mood_sleepy};
+          // Picked by hand in HA (like the Desk Buddy): index 0 = Auto
+          static const int MOOD_OVERRIDE[] = {
+              -1, ${mood_neutral}, ${mood_happy}, ${mood_angry},
+              ${mood_sleepy}, ${mood_sad}, ${mood_surprised}};
+          const auto override_index = id(face_mood_override).active_index();
+          if (override_index.has_value() && *override_index > 0) mood = MOOD_OVERRIDE[*override_index];
           if (mood == id(face_mood)) return;
           id(face_mood) = mood;
           id(face_apply_mood).execute();
@@ -389,7 +1085,10 @@ script:
       - lambda: |-
           switch (id(face_mood)) {
             case ${mood_happy}: id(face_mood_happy).execute(); break;
+            case ${mood_angry}: id(face_mood_angry).execute(); break;
             case ${mood_sleepy}: id(face_mood_sleepy).execute(); break;
+            case ${mood_sad}: id(face_mood_sad).execute(); break;
+            case ${mood_surprised}: id(face_mood_surprised).execute(); break;
             default: id(face_mood_neutral).execute(); break;
           }
 
@@ -397,10 +1096,12 @@ script:
   - id: face_reset
     then:
       - lvgl.widget.update:
-          id: [top_lid_left, top_lid_right, cheek_lid_left, cheek_lid_right, bottom_lid_left, bottom_lid_right, face_zzz]
+          id: [top_lid_left, top_lid_right, angry_lid_left, angry_lid_right, sad_lid_left, sad_lid_right,
+               cheek_lid_left, cheek_lid_right, bottom_lid_left, bottom_lid_right, face_zzz, face_mouth]
           hidden: true
       - lvgl.widget.update:
           id: [pupil_left, pupil_right]
+          y: !lambda "return id(face_gaze_dy);"
           hidden: false
 
   - id: face_set_eyes
@@ -425,13 +1126,16 @@ script:
       - script.execute: face_reset
       - script.execute: {id: face_set_eyes, left_w: 90, left_h: 90, right_w: 90, right_h: 90}
 
-  # Wide and flat, cheeks push up from below
+  # Happy: eyes keep their pupils, cheeks push up from below, gaze slightly up, plus a smile
   - id: face_mood_happy
     then:
       - script.execute: face_reset
-      - script.execute: {id: face_set_eyes, left_w: 100, left_h: 80, right_w: 100, right_h: 80}
+      - script.execute: {id: face_set_eyes, left_w: 90, left_h: 84, right_w: 90, right_h: 84}
       - lvgl.widget.update:
-          id: [cheek_lid_left, cheek_lid_right]
+          id: [pupil_left, pupil_right]
+          y: !lambda "return id(face_gaze_dy) - 8;"
+      - lvgl.widget.update:
+          id: [cheek_lid_left, cheek_lid_right, face_mouth]
           hidden: false
 
   - id: face_mood_sleepy
@@ -444,6 +1148,29 @@ script:
           hidden: false
       - lvgl.widget.update:
           id: face_zzz
+          hidden: false
+
+  - id: face_mood_surprised
+    then:
+      - script.execute: face_reset
+      - script.execute: {id: face_set_eyes, left_w: 75, left_h: 112, right_w: 75, right_h: 112}
+
+  # Lids slant down towards the nose
+  - id: face_mood_angry
+    then:
+      - script.execute: face_reset
+      - script.execute: {id: face_set_eyes, left_w: 85, left_h: 90, right_w: 85, right_h: 90}
+      - lvgl.widget.update:
+          id: [angry_lid_left, angry_lid_right]
+          hidden: false
+
+  # Lids slant down to the outside
+  - id: face_mood_sad
+    then:
+      - script.execute: face_reset
+      - script.execute: {id: face_set_eyes, left_w: 85, left_h: 100, right_w: 85, right_h: 100}
+      - lvgl.widget.update:
+          id: [sad_lid_left, sad_lid_right]
           hidden: false
 
   - id: face_suspicious
@@ -508,7 +1235,7 @@ script:
 # Data from Home Assistant
 # ---------------------------------------------------------------------------
 text_sensor:
-  # Every speaker is subscribed permanently (5 speakers x 4 values + volume), only the selected one is shown (refresh_ui)
+  # Every speaker is subscribed (5 speakers x 4 values + volume), only the selected one is shown (refresh_ui)
   - { platform: homeassistant, id: b1_state, entity_id: "${box1_entity}", on_value: { then: [ { script.execute: refresh_ui } ] } }
   - { platform: homeassistant, id: b1_title, entity_id: "${box1_entity}", attribute: media_title, on_value: { then: [ { script.execute: refresh_ui } ] } }
   - { platform: homeassistant, id: b1_artist, entity_id: "${box1_entity}", attribute: media_artist, on_value: { then: [ { script.execute: refresh_ui } ] } }
@@ -525,7 +1252,63 @@ text_sensor:
   - { platform: homeassistant, id: b5_title, entity_id: "${box5_entity}", attribute: media_title, on_value: { then: [ { script.execute: refresh_ui } ] } }
   - { platform: homeassistant, id: b5_artist, entity_id: "${box5_entity}", attribute: media_artist, on_value: { then: [ { script.execute: refresh_ui } ] } }
 
+# Memory info in HA (to diagnose the covers)
+debug:
+  update_interval: 10s
+
+number:
+  # Maximum display brightness in a dark room (share of the normal brightness)
+  - platform: template
+    id: dark_factor
+    name: Helligkeit im Dunkeln
+    icon: mdi:brightness-4
+    unit_of_measurement: "%"
+    min_value: 10
+    max_value: 100
+    step: 5
+    initial_value: 35
+    optimistic: true
+    restore_value: true
+    entity_category: config
+
 sensor:
+  # Light sensor (LDR) for auto brightness. Visible in HA for calibration.
+  # Values from the Desk Buddy (same board): room light ~0.076 V, dark ~0.100 V.
+  - platform: adc
+    id: light_sensor_voltage
+    name: Umgebungslicht
+    pin: GPIO34
+    update_interval: 1s
+    unit_of_measurement: V
+    accuracy_decimals: 3
+    entity_category: diagnostic
+    filters:
+      - sliding_window_moving_average:
+          window_size: 10
+          send_every: 5
+    on_value:
+      - lambda: |-
+          constexpr float LDR_VOLTAGE_BRIGHT = 0.076f;
+          constexpr float LDR_VOLTAGE_DARK = 0.100f;
+          if (!id(auto_brightness).state || std::isnan(x)) return;
+          float darkness = clamp((x - LDR_VOLTAGE_BRIGHT) / (LDR_VOLTAGE_DARK - LDR_VOLTAGE_BRIGHT), 0.0f, 1.0f);
+          const float dark = id(dark_factor).state / 100.0f;
+          const float old_f = id(ambient_factor);
+          const float new_f = 1.0f - darkness * (1.0f - dark);
+          if (std::fabs(new_f - old_f) < 0.03f) return;
+          id(ambient_factor) = new_f;
+          // If the display is on, rescale the current level (in use/eyes) with the new factor
+          if (!id(display_backlight).remote_values.is_on() || old_f <= 0.0f) return;
+          float cur = id(display_backlight).remote_values.get_brightness();
+          auto call = id(display_backlight).turn_on();
+          call.set_brightness(clamp(cur / old_f * new_f, 0.01f, 1.0f));
+          call.set_transition_length(1000);
+          call.perform();
+  - platform: debug
+    free:
+      name: Freier Speicher
+    block:
+      name: Größter Speicherblock
   - { platform: homeassistant, id: b1_volume, entity_id: "${box1_entity}", attribute: volume_level, on_value: { then: [ { script.execute: refresh_ui } ] } }
   - { platform: homeassistant, id: b2_volume, entity_id: "${box2_entity}", attribute: volume_level, on_value: { then: [ { script.execute: refresh_ui } ] } }
   - { platform: homeassistant, id: b3_volume, entity_id: "${box3_entity}", attribute: volume_level, on_value: { then: [ { script.execute: refresh_ui } ] } }
@@ -536,7 +1319,7 @@ sensor:
 # UI: player, music/audio story picker, favourites per category
 # ---------------------------------------------------------------------------
 lvgl:
-  buffer_size: 25%
+  buffer_size: 12%
   bg_color: 0x000000
   text_color: 0xFFFFFF
   on_idle:
@@ -545,7 +1328,7 @@ lvgl:
         - lvgl.page.show: face_page
         - light.turn_on:
             id: display_backlight
-            brightness: ${idle_brightness}
+            brightness: !lambda return ${idle_brightness} * id(ambient_factor);
     - timeout: ${off_timeout}
       then:
         - light.turn_off: display_backlight
@@ -554,7 +1337,11 @@ lvgl:
     - id: eye_style
       bg_color: ${eye_color}
       bg_opa: COVER
-      border_width: 0
+      # Black border drawn after the lids: hides the bright edge arc
+      # that otherwise stays visible as a thin line at the covered corners
+      border_width: 2
+      border_color: 0x000000
+      border_post: true
       radius: ${eye_radius}
       pad_all: 0
       clip_corner: true
@@ -563,141 +1350,205 @@ lvgl:
       bg_opa: COVER
       border_width: 0
       pad_all: 0
-    - id: big_button
-      # Only border and icon, no fill: the covers are the only colourful thing
-      bg_color: 0x000000
-      bg_opa: COVER
-      border_width: 2
-      border_color: 0xFFFFFF
-      radius: 18
-      text_color: 0xFFFFFF
+    # Tile: dark grey area without border (iOS style), cover/icon centred.
+    # The covers are the only colour on the screen.
     - id: tile_style
-      bg_color: 0x000000
+      bg_color: 0x1C1C1E
       bg_opa: COVER
-      border_width: 2
-      border_color: 0xFFFFFF
-      radius: 12
-      pad_all: 2
+      border_width: 0
+      shadow_width: 0
+      radius: 16
+      pad_all: 0
       text_color: 0xFFFFFF
-      text_font: font_tile
+    # Round buttons (back, next, volume down, volume up)
+    - id: round_button
+      bg_color: 0x2C2C2E
+      bg_opa: COVER
+      border_width: 0
+      shadow_width: 0
+      pad_all: 0
+      text_color: 0xFFFFFF
+    # Transport buttons without background: icon only, like Apple Music
+    - id: bare_button
+      bg_opa: TRANSP
+      border_width: 0
+      shadow_width: 0
+      pad_all: 0
+      text_color: 0xFFFFFF
+    # Inner field (64 px) for icons, in place of a cover
+    - id: inner_square
+      bg_color: 0x2C2C2E
+      bg_opa: COVER
+      border_width: 0
+      radius: 10
+      pad_all: 0
+    # Covers in tiles: rounded. Without clip_corner: that forces LVGL into its own layer on every redraw
+    # (e.g. when the tile is pressed), whose memory briefly showed noise.
+    # LVGL 9 rounds images via radius alone.
+    - id: cover_style
+      radius: 10
 
+  # All buttons: slightly brighter while pressed (visible feedback)
+  theme:
+    button:
+      bg_color: 0x1C1C1E
+      border_width: 0
+      shadow_width: 0
+      text_color: 0xFFFFFF
+      pressed:
+        bg_color: 0x3A3A3C
+        bg_opa: COVER
+
+  # Lock: invisible layer above everything, swallows every touch
+  top_layer:
+    widgets:
+      - obj:
+          id: lock_overlay
+          x: 0
+          y: 0
+          width: 320
+          height: 240
+          bg_opa: TRANSP
+          border_width: 0
+          pad_all: 0
+          radius: 0
+          hidden: true
+          clickable: true
+          scrollable: false
+          widgets:
+            - image:
+                align: BOTTOM_RIGHT
+                x: -6
+                y: -6
+                src: icon_lock
+                image_recolor: 0xFFFFFF
+                image_recolor_opa: COVER
+                opa: 60%
+                clickable: false
   pages:
     # ---------------- Player ----------------
     - id: player_page
       widgets:
         # Tapping the cover opens the music/audio story picker
         - obj:
-            x: 8
-            y: 8
-            width: 120
-            height: 120
-            radius: 12
-            bg_color: 0x000000
-            border_width: 2
-            border_color: 0xFFFFFF
+            x: 16
+            y: 16
+            width: 112
+            height: 112
+            radius: 14
+            bg_color: 0x1C1C1E
+            border_width: 0
             pad_all: 0
+            scrollable: false
             on_click:
               - lvgl.page.show: choose_page
             widgets:
+              # Without a known cover: note icon in grey
               - label:
                   align: CENTER
-                  text: ""
+                  text: "\uF001"
                   text_font: montserrat_48
-                  text_color: 0xFFFFFF
+                  text_color: 0x8E8E93
                   clickable: false
               - image:
                   id: cover_widget
                   align: CENTER
-                  # Tile cover (90 px) scaled up to 120 px. The real track cover
-                  # (about 166 KB JPEG) does not fit into memory without PSRAM.
+                  # Cover of the last started tile (90 px from flash).
+                  # The real track cover does not fit into memory without PSRAM.
                   src: img_music1
-                  zoom: 1.33
+                  styles: cover_style
                   hidden: true
                   clickable: false
         - label:
             id: title_label
-            x: 138
-            y: 12
-            width: 174
+            x: 142
+            y: 16
+            width: 170
+            height: 50
             text: "Keine Musik"
             text_font: font_title
-            long_mode: SCROLL_CIRCULAR
+            long_mode: DOT
         - label:
             id: artist_label
-            x: 138
-            y: 42
-            width: 174
+            x: 142
+            y: 68
+            width: 170
+            height: 20
             text: ""
             text_font: font_small
-            text_color: 0xFFFFFF
-            long_mode: SCROLL_CIRCULAR
-        # Volume: [-] bar [+]
+            text_color: 0x8E8E93
+            long_mode: DOT
+        # Volume: (-) bar (+)
         - button:
-            x: 138
-            y: 76
-            width: 52
-            height: 52
-            styles: big_button
+            x: 140
+            y: 96
+            width: 40
+            height: 40
+            radius: 20
+            styles: round_button
             on_click:
               - script.execute:
                   id: change_volume
                   delta: -${volume_step}
             widgets:
-              - label:
-                  align: CENTER
-                  text: ""
-                  text_font: montserrat_28
+              - label: { align: CENTER, text: "\uF068", text_font: montserrat_20, clickable: false }
         - bar:
             id: volume_bar
-            x: 196
-            y: 96
-            width: 58
-            height: 12
+            x: 188
+            y: 113
+            width: 76
+            height: 6
+            radius: 3
             min_value: 0
             max_value: 100
             value: 50
-            bg_color: 0x000000
-            border_width: 1
-            border_color: 0xFFFFFF
+            bg_color: 0x3A3A3C
+            bg_opa: COVER
+            border_width: 0
             indicator:
               bg_color: 0xFFFFFF
+              radius: 3
         - button:
-            x: 260
-            y: 76
-            width: 52
-            height: 52
-            styles: big_button
+            x: 272
+            y: 96
+            width: 40
+            height: 40
+            radius: 20
+            styles: round_button
             on_click:
               - script.execute:
                   id: change_volume
                   delta: ${volume_step}
             widgets:
-              - label:
-                  align: CENTER
-                  text: ""
-                  text_font: montserrat_28
-        # Transport: previous, play/pause, next
+              - label: { align: CENTER, text: "\uF067", text_font: montserrat_20, clickable: false }
+        # Transport: previous, play/pause (white circle), next
         - button:
             x: 8
-            y: 140
-            width: 90
-            height: 92
-            styles: big_button
-            on_click:
+            y: 148
+            width: 100
+            height: 84
+            styles: bare_button
+            # Short tap: one track back. Long press: playlist/album from the start
+            on_short_click:
               - script.execute:
                   id: player_action
                   action_name: media_player.media_previous_track
+            on_long_press:
+              - script.execute: restart_queue
             widgets:
-              - label:
-                  align: CENTER
-                  text: ""
-                  text_font: montserrat_48
+              - label: { align: CENTER, text: "\uF048", text_font: montserrat_40, clickable: false }
         - button:
-            x: 104
-            y: 140
-            width: 112
-            height: 92
-            styles: big_button
+            x: 122
+            y: 152
+            width: 76
+            height: 76
+            radius: 38
+            bg_color: 0xFFFFFF
+            bg_opa: COVER
+            border_width: 0
+            shadow_width: 0
+            pressed:
+              bg_color: 0xC7C7CC
             on_click:
               - script.execute:
                   id: player_action
@@ -706,172 +1557,484 @@ lvgl:
               - label:
                   id: play_icon
                   align: CENTER
-                  text: ""
-                  text_font: montserrat_48
+                  text: "\uF04B"
+                  text_font: montserrat_40
+                  text_color: 0x000000
+                  clickable: false
         - button:
-            x: 222
-            y: 140
-            width: 90
-            height: 92
-            styles: big_button
+            x: 212
+            y: 148
+            width: 100
+            height: 84
+            styles: bare_button
             on_click:
               - script.execute:
                   id: player_action
                   action_name: media_player.media_next_track
             widgets:
-              - label:
-                  align: CENTER
-                  text: ""
-                  text_font: montserrat_48
+              - label: { align: CENTER, text: "\uF051", text_font: montserrat_40, clickable: false }
 
     # ---------------- Picker: music or audio stories ----------------
     - id: choose_page
       widgets:
+        # Header: round back button top left, title next to it
         - button:
             x: 8
-            y: 8
-            width: 148
-            height: 168
+            y: 6
+            width: 44
+            height: 44
+            radius: 22
+            styles: round_button
+            on_click:
+              - lvgl.page.show: player_page
+            widgets:
+              - label: { align: CENTER, text: "\uF053", text_font: montserrat_20, clickable: false }
+        - label:
+            x: 62
+            y: 16
+            width: 250
+            text: "Was hören wir?"
+            text_font: font_title
+            long_mode: DOT
+        - button:
+            x: 56
+            y: 78
+            width: 96
+            height: 90
             styles: tile_style
             on_click:
               - lvgl.page.show: music_page
             widgets:
-              - label: { align: CENTER, y: -18, text: "\uF001", text_font: montserrat_48 }
-              - label: { align: CENTER, y: 36, text: "Musik", text_font: font_title }
+              - obj:
+                  align: CENTER
+                  width: 64
+                  height: 64
+                  styles: inner_square
+                  clickable: false
+                  scrollable: false
+                  widgets:
+                  - image: { align: CENTER, src: icon_music, image_recolor: 0xFFFFFF, image_recolor_opa: COVER, clickable: false }
+        - label:
+            x: 56
+            y: 176
+            width: 96
+            text: "Musik"
+            text_font: font_label
+            text_color: 0x8E8E93
+            text_align: CENTER
         - button:
-            x: 164
-            y: 8
-            width: 148
-            height: 168
+            x: 168
+            y: 78
+            width: 96
+            height: 90
             styles: tile_style
             on_click:
+              - lambda: id(story_pg) = 0;
+              - script.execute: story_show
               - lvgl.page.show: story_page
             widgets:
-              # Audio stories: no book symbol in the LVGL fonts, so the eye symbol is a stand-in
-              - label: { align: CENTER, y: -18, text: "\uF06E", text_font: montserrat_48 }
-              - label: { align: CENTER, y: 36, text: "Hörspiele", text_font: font_title }
-        - button:
-            x: 8
-            y: 184
-            width: 304
-            height: 48
-            styles: big_button
-            on_click:
-              - lvgl.page.show: player_page
-            widgets:
-              - label: { align: CENTER, text: "\uF053", text_font: montserrat_28 }
+              - obj:
+                  align: CENTER
+                  width: 64
+                  height: 64
+                  styles: inner_square
+                  clickable: false
+                  scrollable: false
+                  widgets:
+                  # Ear icon (Material Design Icons), tinted white
+                  - image: { align: CENTER, src: icon_ear, image_recolor: 0xFFFFFF, image_recolor_opa: COVER, clickable: false }
+        - label:
+            x: 168
+            y: 176
+            width: 96
+            text: "Hörspiele"
+            text_font: font_label
+            text_color: 0x8E8E93
+            text_align: CENTER
 
     # ---------------- Music ----------------
     - id: music_page
       widgets:
+        # Header: round back button top left, title next to it
         - button:
-            x: 5
-            y: 12
-            width: 98
-            height: 98
+            x: 8
+            y: 6
+            width: 44
+            height: 44
+            radius: 22
+            styles: round_button
+            on_click:
+              - lvgl.page.show: choose_page
+            widgets:
+              - label: { align: CENTER, text: "\uF053", text_font: montserrat_20, clickable: false }
+        - label:
+            x: 62
+            y: 16
+            width: 250
+            text: "Musik"
+            text_font: font_title
+            long_mode: DOT
+        - button:
+            x: 8
+            y: 54
+            width: 96
+            height: 90
             styles: tile_style
             on_click:
               - script.execute: { id: play_spotify, url: "${music1_url}" }
               - lvgl.image.update: { id: cover_widget, src: img_music1 }
               - lvgl.widget.show: cover_widget
+              - lambda: id(cover_known) = true;
             widgets:
-              - image: { align: CENTER, src: img_music1, clickable: false }
+              - image: { align: CENTER, src: img_music1_t, styles: cover_style, clickable: false }
         - button:
-            x: 111
-            y: 12
-            width: 98
-            height: 98
+            x: 112
+            y: 54
+            width: 96
+            height: 90
             styles: tile_style
             on_click:
               - script.execute: { id: play_spotify, url: "${music2_url}" }
               - lvgl.image.update: { id: cover_widget, src: img_music2 }
               - lvgl.widget.show: cover_widget
+              - lambda: id(cover_known) = true;
             widgets:
-              - image: { align: CENTER, src: img_music2, clickable: false }
-        - button:
-            x: 217
-            y: 130
-            width: 98
-            height: 98
-            styles: tile_style
-            bg_color: 0x000000
-            border_width: 2
-            border_color: 0xFFFFFF
-            on_click:
-              - lvgl.page.show: choose_page
-            widgets:
-              - label:
-                  align: CENTER
-                  text: "\uF053"
-                  text_font: montserrat_48
+              - image: { align: CENTER, src: img_music2_t, styles: cover_style, clickable: false }
 
-    # ---------------- Audio stories ----------------
+    # ---------------- Audio stories: one tile per series ----------------
     - id: story_page
       widgets:
+        # Header: round back button (on page 2 back to page 1), title, page number, next
         - button:
-            x: 5
-            y: 12
-            width: 98
-            height: 98
-            styles: tile_style
+            x: 8
+            y: 6
+            width: 44
+            height: 44
+            radius: 22
+            styles: round_button
             on_click:
-              - script.execute: { id: play_spotify, url: "${story1_url}" }
-              - lvgl.image.update: { id: cover_widget, src: img_story1 }
-              - lvgl.widget.show: cover_widget
+              - if:
+                  condition:
+                    lambda: return id(story_pg) > 0;
+                  then:
+                    - lambda: id(story_pg) = 0;
+                    - script.execute: story_show
+                  else:
+                    - lvgl.page.show: choose_page
             widgets:
-              - image: { align: CENTER, src: img_story1, clickable: false }
+              - label: { align: CENTER, text: "\uF053", text_font: montserrat_20, clickable: false }
+        - label:
+            x: 62
+            y: 16
+            width: 150
+            text: "Hörspiele"
+            text_font: font_title
+            long_mode: DOT
+        - label:
+            id: story_page_label
+            x: 212
+            y: 18
+            width: 48
+            text: "1/2"
+            text_font: font_small
+            text_color: 0x8E8E93
+            text_align: RIGHT
         - button:
-            x: 111
-            y: 12
-            width: 98
-            height: 98
-            styles: tile_style
+            id: snext
+            x: 268
+            y: 6
+            width: 44
+            height: 44
+            radius: 22
+            styles: round_button
             on_click:
-              - script.execute: { id: play_spotify, url: "${story2_url}" }
-              - lvgl.image.update: { id: cover_widget, src: img_story2 }
-              - lvgl.widget.show: cover_widget
+              - lambda: id(story_pg) = 1;
+              - script.execute: story_show
             widgets:
-              - image: { align: CENTER, src: img_story2, clickable: false }
+              - label: { align: CENTER, text: "\uF054", text_font: montserrat_20, clickable: false }
         - button:
-            x: 217
-            y: 12
-            width: 98
-            height: 98
+            id: stile0
+            x: 8
+            y: 54
+            width: 96
+            height: 90
             styles: tile_style
+            hidden: false
             on_click:
-              - script.execute: { id: play_spotify, url: "${story3_url}" }
-              - lvgl.image.update: { id: cover_widget, src: img_story3 }
-              - lvgl.widget.show: cover_widget
+              - script.execute: { id: series_open, series: 0 }
             widgets:
-              - image: { align: CENTER, src: img_story3, clickable: false }
+              - image: { align: CENTER, src: img_series1_t, styles: cover_style, clickable: false }
         - button:
-            x: 5
-            y: 130
-            width: 98
-            height: 98
+            id: stile1
+            x: 112
+            y: 54
+            width: 96
+            height: 90
             styles: tile_style
+            hidden: false
             on_click:
-              - script.execute: { id: play_spotify, url: "${story4_url}" }
-              - lvgl.image.update: { id: cover_widget, src: img_story4 }
-              - lvgl.widget.show: cover_widget
+              - script.execute: { id: series_open, series: 1 }
             widgets:
-              - image: { align: CENTER, src: img_story4, clickable: false }
+              - image: { align: CENTER, src: img_series2_t, styles: cover_style, clickable: false }
         - button:
-            x: 217
-            y: 130
-            width: 98
-            height: 98
+            id: stile2
+            x: 216
+            y: 54
+            width: 96
+            height: 90
             styles: tile_style
-            bg_color: 0x000000
-            border_width: 2
-            border_color: 0xFFFFFF
+            hidden: false
             on_click:
-              - lvgl.page.show: choose_page
+              - script.execute: { id: series_open, series: 2 }
             widgets:
-              - label:
-                  align: CENTER
-                  text: "\uF053"
-                  text_font: montserrat_48
+              - image: { align: CENTER, src: img_series3_t, styles: cover_style, clickable: false }
+        - button:
+            id: stile3
+            x: 8
+            y: 148
+            width: 96
+            height: 90
+            styles: tile_style
+            hidden: false
+            on_click:
+              - script.execute: { id: series_open, series: 3 }
+            widgets:
+              - image: { align: CENTER, src: img_series4_t, styles: cover_style, clickable: false }
+        - button:
+            id: stile4
+            x: 112
+            y: 148
+            width: 96
+            height: 90
+            styles: tile_style
+            hidden: false
+            on_click:
+              - script.execute: { id: series_open, series: 4 }
+            widgets:
+              - image: { align: CENTER, src: img_series5_t, styles: cover_style, clickable: false }
+        - button:
+            id: stile5
+            x: 216
+            y: 148
+            width: 96
+            height: 90
+            styles: tile_style
+            hidden: false
+            on_click:
+              - script.execute: { id: series_open, series: 5 }
+            widgets:
+              - image: { align: CENTER, src: img_series6_t, styles: cover_style, clickable: false }
+        - button:
+            id: stile6
+            x: 8
+            y: 54
+            width: 96
+            height: 90
+            styles: tile_style
+            hidden: true
+            on_click:
+              - script.execute: { id: series_open, series: 6 }
+            widgets:
+              - image: { align: CENTER, src: img_series7_t, styles: cover_style, clickable: false }
+        - button:
+            id: stile7
+            x: 112
+            y: 54
+            width: 96
+            height: 90
+            styles: tile_style
+            hidden: true
+            on_click:
+              - script.execute: { id: series_open, series: 7 }
+            widgets:
+              - image: { align: CENTER, src: img_series8_t, styles: cover_style, clickable: false }
+        - button:
+            id: stile8
+            x: 216
+            y: 54
+            width: 96
+            height: 90
+            styles: tile_style
+            hidden: true
+            on_click:
+              - script.execute: { id: series_open, series: 8 }
+            widgets:
+              - image: { align: CENTER, src: img_series9_t, styles: cover_style, clickable: false }
+        - button:
+            id: stile9
+            x: 8
+            y: 148
+            width: 96
+            height: 90
+            styles: tile_style
+            hidden: true
+            on_click:
+              - script.execute: { id: series_open, series: 9 }
+            widgets:
+              - image: { align: CENTER, src: img_series10_t, styles: cover_style, clickable: false }
+
+    # ---------------- Episodes of a series: 6 per page, header with page number and next ----------------
+    - id: series_page
+      widgets:
+        # Header: round back button top left, title next to it
+        - button:
+            x: 8
+            y: 6
+            width: 44
+            height: 44
+            radius: 22
+            styles: round_button
+            on_click:
+              - if:
+                  condition:
+                    lambda: return id(cur_page) > 0;
+                  then:
+                    - lambda: id(cur_page)--;
+                    - script.execute: series_fill
+                  else:
+                    - lvgl.page.show: story_page
+            widgets:
+              - label: { align: CENTER, text: "\uF053", text_font: montserrat_20, clickable: false }
+        - label:
+            id: series_title
+            x: 62
+            y: 16
+            width: 150
+            text: ""
+            text_font: font_title
+            long_mode: DOT
+        - label:
+            id: page_label
+            x: 212
+            y: 18
+            width: 48
+            text: ""
+            text_font: font_small
+            text_color: 0x8E8E93
+            text_align: RIGHT
+        - button:
+            id: cnext
+            x: 268
+            y: 6
+            width: 44
+            height: 44
+            radius: 22
+            styles: round_button
+            hidden: true
+            on_click:
+              - lambda: id(cur_page)++;
+              - script.execute: series_fill
+            widgets:
+              - label: { align: CENTER, text: "\uF054", text_font: montserrat_20, clickable: false }
+        - button:
+            id: ctile0
+            x: 8
+            y: 54
+            width: 96
+            height: 90
+            styles: tile_style
+            hidden: true
+            on_click:
+              - script.execute: { id: play_slot, slot: 0 }
+            widgets:
+              - label: { id: clab0, align: CENTER, text: "", text_font: font_num, text_color: 0x8E8E93, clickable: false }
+              - image: { id: cimg0, align: CENTER, src: img_ph, styles: cover_style, clickable: false, hidden: true }
+        - button:
+            id: ctile1
+            x: 112
+            y: 54
+            width: 96
+            height: 90
+            styles: tile_style
+            hidden: true
+            on_click:
+              - script.execute: { id: play_slot, slot: 1 }
+            widgets:
+              - label: { id: clab1, align: CENTER, text: "", text_font: font_num, text_color: 0x8E8E93, clickable: false }
+              - image: { id: cimg1, align: CENTER, src: img_ph, styles: cover_style, clickable: false, hidden: true }
+        - button:
+            id: ctile2
+            x: 216
+            y: 54
+            width: 96
+            height: 90
+            styles: tile_style
+            hidden: true
+            on_click:
+              - script.execute: { id: play_slot, slot: 2 }
+            widgets:
+              - label: { id: clab2, align: CENTER, text: "", text_font: font_num, text_color: 0x8E8E93, clickable: false }
+              - image: { id: cimg2, align: CENTER, src: img_ph, styles: cover_style, clickable: false, hidden: true }
+        - button:
+            id: ctile3
+            x: 8
+            y: 148
+            width: 96
+            height: 90
+            styles: tile_style
+            hidden: true
+            on_click:
+              - script.execute: { id: play_slot, slot: 3 }
+            widgets:
+              - label: { id: clab3, align: CENTER, text: "", text_font: font_num, text_color: 0x8E8E93, clickable: false }
+              - image: { id: cimg3, align: CENTER, src: img_ph, styles: cover_style, clickable: false, hidden: true }
+        - button:
+            id: ctile4
+            x: 112
+            y: 148
+            width: 96
+            height: 90
+            styles: tile_style
+            hidden: true
+            on_click:
+              - script.execute: { id: play_slot, slot: 4 }
+            widgets:
+              - label: { id: clab4, align: CENTER, text: "", text_font: font_num, text_color: 0x8E8E93, clickable: false }
+              - image: { id: cimg4, align: CENTER, src: img_ph, styles: cover_style, clickable: false, hidden: true }
+        - button:
+            id: ctile5
+            x: 216
+            y: 148
+            width: 96
+            height: 90
+            styles: tile_style
+            hidden: true
+            on_click:
+              - script.execute: { id: play_slot, slot: 5 }
+            widgets:
+              - label: { id: clab5, align: CENTER, text: "", text_font: font_num, text_color: 0x8E8E93, clickable: false }
+              - image: { id: cimg5, align: CENTER, src: img_ph, styles: cover_style, clickable: false, hidden: true }
+
+    # ---------------- Colour test (switch "Farbtest" in HA) ----------------
+    - id: test_page
+      skip: true
+      widgets:
+        - obj: { x: 4, y: 8, width: 48, height: 80, bg_color: 0xFF0000, bg_opa: COVER, border_width: 0, radius: 0, clickable: false }
+        - label: { x: 4, y: 92, width: 48, text: "Rot", text_font: font_small, text_align: CENTER }
+        - obj: { x: 56, y: 8, width: 48, height: 80, bg_color: 0x00FF00, bg_opa: COVER, border_width: 0, radius: 0, clickable: false }
+        - label: { x: 56, y: 92, width: 48, text: "Grün", text_font: font_small, text_align: CENTER }
+        - obj: { x: 108, y: 8, width: 48, height: 80, bg_color: 0x0000FF, bg_opa: COVER, border_width: 0, radius: 0, clickable: false }
+        - label: { x: 108, y: 92, width: 48, text: "Blau", text_font: font_small, text_align: CENTER }
+        - obj: { x: 160, y: 8, width: 48, height: 80, bg_color: 0xFFFF00, bg_opa: COVER, border_width: 0, radius: 0, clickable: false }
+        - label: { x: 160, y: 92, width: 48, text: "Gelb", text_font: font_small, text_align: CENTER }
+        - obj: { x: 212, y: 8, width: 48, height: 80, bg_color: 0x00FFFF, bg_opa: COVER, border_width: 0, radius: 0, clickable: false }
+        - label: { x: 212, y: 92, width: 48, text: "Cyan", text_font: font_small, text_align: CENTER }
+        - obj: { x: 264, y: 8, width: 48, height: 80, bg_color: 0xFF00FF, bg_opa: COVER, border_width: 0, radius: 0, clickable: false }
+        - label: { x: 264, y: 92, width: 48, text: "Magenta", text_font: font_small, text_align: CENTER }
+        - obj: { x: 4, y: 124, width: 36, height: 50, bg_color: 0x000000, bg_opa: COVER, border_width: 1, border_color: 0xFFFFFF, radius: 0, clickable: false }
+        - obj: { x: 43, y: 124, width: 36, height: 50, bg_color: 0x242424, bg_opa: COVER, border_width: 1, border_color: 0xFFFFFF, radius: 0, clickable: false }
+        - obj: { x: 82, y: 124, width: 36, height: 50, bg_color: 0x494949, bg_opa: COVER, border_width: 1, border_color: 0xFFFFFF, radius: 0, clickable: false }
+        - obj: { x: 121, y: 124, width: 36, height: 50, bg_color: 0x6D6D6D, bg_opa: COVER, border_width: 1, border_color: 0xFFFFFF, radius: 0, clickable: false }
+        - obj: { x: 160, y: 124, width: 36, height: 50, bg_color: 0x929292, bg_opa: COVER, border_width: 1, border_color: 0xFFFFFF, radius: 0, clickable: false }
+        - obj: { x: 199, y: 124, width: 36, height: 50, bg_color: 0xB6B6B6, bg_opa: COVER, border_width: 1, border_color: 0xFFFFFF, radius: 0, clickable: false }
+        - obj: { x: 238, y: 124, width: 36, height: 50, bg_color: 0xDBDBDB, bg_opa: COVER, border_width: 1, border_color: 0xFFFFFF, radius: 0, clickable: false }
+        - obj: { x: 277, y: 124, width: 36, height: 50, bg_color: 0xFFFFFF, bg_opa: COVER, border_width: 1, border_color: 0xFFFFFF, radius: 0, clickable: false }
+        # Comparison: tile grey as a plain area (left) and as a real tile/button (middle, right).
+        # If all three look equally dark, the blue tint comes from the panel, not the code.
+        - obj: { x: 4, y: 180, width: 100, height: 36, bg_color: 0x1C1C1E, bg_opa: COVER, border_width: 0, radius: 16, clickable: false }
+        - button: { x: 110, y: 180, width: 100, height: 36, styles: tile_style, clickable: false }
+        - button: { x: 216, y: 180, width: 100, height: 36, styles: round_button, clickable: false }
+        - label: { x: 4, y: 220, width: 312, text: "Fläche - Kachel - Knopf", text_font: font_small, text_align: CENTER }
 
     - id: face_page
       skip: true
@@ -928,14 +2091,42 @@ lvgl:
                   styles: lid_style
                   clickable: false
                   hidden: true
-              # Happy: big circle below the eye cuts it into an arc
+              # Slanted lids: an 80 px thick line centred over the 85 px eye (x -23 .. 107) so both
+              # eyes mirror each other; cut about 5 px at the shallow end to 31 px, pupil stays clear
+              - line:
+                  id: angry_lid_left
+                  x: -23
+                  y: -42
+                  points:
+                    - 0, 0
+                    - 130, 40
+                  line_width: 80
+                  # Round ends: a square-cut end left one eye corner uncovered
+                  line_rounded: true
+                  line_color: 0x000000
+                  clickable: false
+                  hidden: true
+              - line:
+                  id: sad_lid_left
+                  x: -23
+                  y: -42
+                  points:
+                    - 0, 40
+                    - 130, 0
+                  line_width: 80
+                  # Round ends: a square-cut end left one eye corner uncovered
+                  line_rounded: true
+                  line_color: 0x000000
+                  clickable: false
+                  hidden: true
+              # Happy: a 120 px "cheek" circle cuts 20 px out of the eye bottom
               - obj:
                   id: cheek_lid_left
-                  align: BOTTOM_MID
-                  y: 92
-                  width: 154
-                  height: 154
-                  radius: 77
+                  align: TOP_MID
+                  y: 64
+                  width: 120
+                  height: 120
+                  radius: 60
                   styles: lid_style
                   clickable: false
                   hidden: true
@@ -988,14 +2179,41 @@ lvgl:
                   styles: lid_style
                   clickable: false
                   hidden: true
-              # Happy: big circle below the eye cuts it into an arc
+              # Slanted lids: see left eye
+              - line:
+                  id: angry_lid_right
+                  x: -23
+                  y: -42
+                  points:
+                    - 0, 40
+                    - 130, 0
+                  line_width: 80
+                  # Round ends: a square-cut end left one eye corner uncovered
+                  line_rounded: true
+                  line_color: 0x000000
+                  clickable: false
+                  hidden: true
+              - line:
+                  id: sad_lid_right
+                  x: -23
+                  y: -42
+                  points:
+                    - 0, 0
+                    - 130, 40
+                  line_width: 80
+                  # Round ends: a square-cut end left one eye corner uncovered
+                  line_rounded: true
+                  line_color: 0x000000
+                  clickable: false
+                  hidden: true
+              # Happy: a 120 px "cheek" circle cuts 20 px out of the eye bottom
               - obj:
                   id: cheek_lid_right
-                  align: BOTTOM_MID
-                  y: 92
-                  width: 154
-                  height: 154
-                  radius: 77
+                  align: TOP_MID
+                  y: 64
+                  width: 120
+                  height: 120
+                  radius: 60
                   styles: lid_style
                   clickable: false
                   hidden: true
@@ -1007,6 +2225,30 @@ lvgl:
                   styles: lid_style
                   clickable: false
                   hidden: true
+        # Happy: smile (lower part of a circle, thin stroke with round ends)
+        - arc:
+            id: face_mouth
+            align: CENTER
+            x: 0
+            y: 36
+            width: 68
+            height: 68
+            start_angle: 35
+            end_angle: 145
+            adjustable: false
+            clickable: false
+            hidden: true
+            arc_color: ${eye_color}
+            arc_width: 7
+            arc_rounded: true
+            bg_opa: TRANSP
+            border_width: 0
+            pad_all: 0
+            indicator:
+              arc_opa: TRANSP
+            knob:
+              bg_opa: TRANSP
+              pad_all: 0
         - label:
             id: face_zzz
             align: TOP_RIGHT

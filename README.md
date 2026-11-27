@@ -38,10 +38,17 @@ without touch it cycles through the pages; the BOOT button toggles the standby f
 - Needs the Sonos integration in Home Assistant, Spotify linked in the Sonos app, and in the
   device options of the buddy: "Allow the device to perform Home Assistant actions".
 - Up to five speakers (`box1_entity` ... `box5_entity`), selectable via the `Sonos-Box` select in HA.
-- Tiles: `music1`/`story1` ... in `substitutions:` hold a name, a Spotify link and a cover URL.
-  The two playlist links are placeholders (`YOUR_PLAYLIST_ID`), put in your own.
-  Covers are downloaded at compile time; get the URL via
+- Music tiles: `music1`, `music2` in `substitutions:` hold a name, a Spotify link and a cover
+  (local file or URL). Links are placeholders (`YOUR_PLAYLIST_ID`, `YOUR_ALBUM_ID`) and all covers
+  point to `esphome/images/cover-placeholder.png`, put in your own. Spotify cover URL:
   `https://open.spotify.com/oembed?url=<spotify link>` → `thumbnail_url`.
+- Audio stories: one tile per series (10 tiles, 6 per page), covers `series1_cover` ... `series10_cover`.
+  The episodes of each series are listed in the `series_fill` script as `album ID|cover ID`
+  (one placeholder line per series in the repo), the series names in the `names` list below it.
+  Episode covers (64 px) are loaded on demand, one at a time, because the board has no PSRAM.
+- Standby eyes like the Desk Buddy; the mood follows the speaker (playing = happy, paused = neutral,
+  idle = sleepy). The `Gesicht` select in HA forces a mood. After `sleep_timeout` without touch
+  (and nothing playing) it goes to deep sleep; on USB a tap wakes it, on battery the SW1 switch.
 - Set the volume limit in the Sonos app, the speaker enforces it.
 - The UI is in German (made for kids), change the labels in the LVGL section.
 
